@@ -95,9 +95,16 @@ def get_jhu_data() -> pd.DataFrame:
     frame = pd.DataFrame(data)
 
     if frame.empty is not True:
-        logger.info('Successfully downloaded JHU data! Saving as jhu_{}'.format(now_file_ext))
+        logger.info('Successfully downloaded JHU data! If new will save as jhu_{}'.format(now_file_ext))
 
-    frame.to_csv(jhu_path + 'jhu_' + now_file_ext)
+    newest_data = get_most_recent_data('jhu')
+
+    if is_new_data(frame, newest_data, 'jhu'):
+        print('Found new data! Saving...')
+        logger.info('Found new data! Now saving...')
+        frame.to_csv(jhu_path + 'jhu_' + now_file_ext)
+    else:
+        logger.warning('Downloaded data is not new! Will not save')
 
     return frame
 
@@ -153,23 +160,31 @@ def make_state_frame(data: pd.DataFrame) -> pd.DataFrame:
     return pd.DataFrame(ret_data)
 
 
-def is_new_data(recent_data: pd.DataFrame, source='jhu') -> bool:
+def is_new_data(recent_data: pd.DataFrame, prev_data: pd.DataFrame, source: str) -> bool:
     """
     Checks to see if the data that was recently fetched is the same as existing data
+    :param source: The source of the data. Determines what columns to select. Valid inputs are cdc or jhu
     :param recent_data: The most recently fetched data
-    :param source: The type of data to load for comparison. Defaults to data from JHU
+    :param prev_data: The dataframe to compare to
     :return: True or false depending on whether or not the recent_data dataframe is newer than the previous one
     """
-    prev_data = pd.read_csv(source + now_file_ext)
-    columns = ['state', 'cases', 'deaths', 'recoveries']
+    columns = []
     is_new = False
+    if source == 'jhu':
+        columns = ['state', 'cases', 'deaths', 'recoveries']
+    if source == 'cdc':
+        columns = ['measure', 'counts']
 
-    for column in columns:
-        if recent_data[column] != prev_data[column]:
-            is_new = True
-            break
+    if prev_data.empty:
+        return True
+    else:
+        for column in columns:
+            for entry1, entry2 in zip(recent_data[column], prev_data[column]):
+                if entry1 != entry2:
+                    is_new = True
+                    break
 
-    return is_new
+        return is_new
 
 
 def get_cdc_data() -> pd.DataFrame:
@@ -200,9 +215,16 @@ def get_cdc_data() -> pd.DataFrame:
     frame = pd.DataFrame(data)
 
     if frame.empty is not True:
-        logger.info('Successfully downloaded CDC data! Saving as CDC_{}'.format(now_file_ext))
+        logger.info('Successfully downloaded CDC data! If new will save as cdc_{}'.format(now_file_ext))
 
-    frame.to_csv(cdc_path + 'cdc_' + now_file_ext)
+    newest_data = get_most_recent_data('cdc')
+
+    if is_new_data(frame, newest_data, 'cdc'):
+        print('Found new data! Saving...')
+        logger.info('Found new data! Now saving...')
+        frame.to_csv(cdc_path + 'cdc_' + now_file_ext)
+    else:
+        logger.warning('Downloaded data is not new! Will not save')
 
     return frame
 
@@ -216,11 +238,53 @@ def load_all_data(data_type: str) -> []:
     data = []
 
     if data_type.lower() == 'cdc':
-        data = [file for file in os.listdir(cdc_path)]
+        for file in os.listdir(cdc_path):
+            if file != '.DS_Store':
+                data.append(file)
     if data_type.lower() == 'jhu':
-        data = [file for file in os.listdir(jhu_path)]
+        for file in os.listdir(jhu_path):
+            if file != '.DS_Store':
+                data.append(file)
 
     return data
+
+
+def get_most_recent_data(data_source: str) -> pd.DataFrame:
+    """
+    Returns a dataframe of the most recently downloaded data of a certain type
+    :param data_source: The source of the data to load. Valid sources are jhu or cdc
+    :return: A dataframe of the most recently downloaded data of a certain type
+    """
+
+    candidate_file = ''
+    # We look at the difference between right now and when the file was created, and select the lowest difference
+    curr_lowest_diff = None
+
+    if load_all_data(data_source) != []:
+        for file in load_all_data(data_source):
+            file_time = file[5:18]
+            time_components = file_time.split('_')
+            file_datetime = datetime(2020, int(time_components[0]), int(time_components[1]),
+                                     hour=int(time_components[2]),
+                                     minute=int(time_components[3]), second=int(time_components[4]))
+            time_diff = now - file_datetime
+
+            if curr_lowest_diff is not None:
+                if time_diff < curr_lowest_diff:
+                    curr_lowest_diff = time_diff
+                    candidate_file = file
+            else:
+                curr_lowest_diff = time_diff
+                candidate_file = file
+
+        if data_source == 'jhu':
+            candidate_file = jhu_path + candidate_file
+        if data_source == 'cdc':
+            candidate_file = cdc_path + candidate_file
+
+        return pd.read_csv(candidate_file)
+    else:
+        return pd.DataFrame()
 
 
 def main(first_run=True):
@@ -286,13 +350,11 @@ def main(first_run=True):
     plt.show()
     plt.close()
 
-
     try:
         while True:
-            print('Sleeping now for one minute! Will check for new data afterwards...')
-            time.sleep(60)
+            print('Sleeping now for 30 minutes! Will check for new data afterwards...')
+            time.sleep(60 * 30)
             main(first_run=False)
-            break
     except KeyboardInterrupt:
         print('Exiting...')
 
