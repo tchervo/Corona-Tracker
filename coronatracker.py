@@ -1,6 +1,7 @@
 import os
 import time
 import logging
+import json
 from datetime import datetime
 
 import matplotlib.pyplot as plt
@@ -10,16 +11,49 @@ import requests
 from bs4 import BeautifulSoup
 from oauth2client.service_account import ServiceAccountCredentials
 import gspread
+import tweepy as tw
 
 jhu_path = os.getcwd() + '/jhu_data/'
 cdc_path = os.getcwd() + '/cdc_data/'
 plot_path = os.getcwd() + '/plots/'
+twitter_file = os.getcwd() + '/twitter_creds.json'
 
 now = datetime.now()
 now_file_ext = now.strftime('%m_%d_%H_%M_%S.csv')
 
 log_path = os.getcwd() + '/logs/coronatracker_log.log'
 log_format = '%(levelname)s | %(asctime)s | %(message)s'
+
+should_tweet = False
+
+if os.path.exists(twitter_file):
+    with open(twitter_file, 'r') as file:
+        twitter_creds = json.load(file)
+
+    consumer_key = twitter_creds['consumer_key']
+    consumer_secret = twitter_creds['consumer_secret']
+    access_token = twitter_creds['access_token']
+    access_secret = twitter_creds['access_secret']
+    auth = tw.OAuthHandler(consumer_key, consumer_secret)
+
+    auth.set_access_token(access_token, access_secret)
+else:
+    consumer_key = input('Input your Twitter consumer key: ')
+    consumer_secret = input('Input your Twitter consumer secret: ')
+    auth = tw.OAuthHandler(consumer_key, consumer_secret)
+    redirect_url = auth.get_authorization_url()
+
+    print('Please click this link to authorize CoronaTracker: {}'.format(redirect_url))
+    verifier = input('Enter the verification code you received from Twitter: ')
+    auth.get_access_token(verifier)
+
+    data = {'consumer_key': consumer_key, 'consumer_secret': consumer_secret, 'access_token': auth.access_token,
+            'access_secret': auth.access_token_secret}
+
+    with open(twitter_file, 'w') as file:
+        json.dump(data, file)
+
+api = tw.API(auth, wait_on_rate_limit=True)
 
 state_map = {'AL': 'Alabama', 'AK': 'Alaska', 'AZ': 'Arizona', 'CA': 'California', 'CO': 'Colorado',
              'CT': 'Connecticut', 'DE': 'Delaware', 'FL': 'Florida', 'GA': 'Georgia', 'HI': 'Hawaii',
@@ -50,7 +84,8 @@ def get_jhu_data() -> pd.DataFrame:
     """
     logger.info('Attempting to connect to JHU sheet')
 
-    jhu_sheet_id = '1yZv9w9zRKwrGTaR-YzmAqMefw4wMlaXocejdxZaTs6w'
+    # Time series: 1UF2pSkFTURko2OvfHWWlFpDFAr1UxCBA4JLwlSP6KFo
+    jhu_sheet_id = '1wQVypefm946ch4XDp37uZ-wartW4V7ILdg-qYiDXUHM'
     SCOPES = ['https://www.googleapis.com/auth/spreadsheets.readonly']
     creds = ServiceAccountCredentials.from_json_keyfile_name('credentials.json', scopes=SCOPES)
     client = gspread.authorize(creds)
@@ -103,6 +138,7 @@ def get_jhu_data() -> pd.DataFrame:
         print('Found new data! Saving...')
         logger.info('Found new data! Now saving...')
         frame.to_csv(jhu_path + 'jhu_' + now_file_ext)
+        should_tweet = True
     else:
         logger.warning('Downloaded data is not new! Will not save')
 
@@ -223,6 +259,7 @@ def get_cdc_data() -> pd.DataFrame:
         print('Found new data! Saving...')
         logger.info('Found new data! Now saving...')
         frame.to_csv(cdc_path + 'cdc_' + now_file_ext)
+        should_tweet = True
     else:
         logger.warning('Downloaded data is not new! Will not save')
 
@@ -287,6 +324,20 @@ def get_most_recent_data(data_source: str) -> pd.DataFrame:
         return pd.DataFrame()
 
 
+def make_tweet():
+    """Creates a tweet to post to Twitter"""
+
+    text = '2019-nCoV Update: This tracker detected new information'
+    media_ids = []
+    files = [plot_path + 'state_sum.png', plot_path + 'city_sum.png']
+
+    for file in files:
+        response = api.media_upload(file)
+        media_ids.append(response.media_id)
+
+    api.update_status(status=text, media_ids=media_ids)
+
+
 def main(first_run=True):
     if first_run:
         if os.path.exists(cdc_path) is not True:
@@ -349,6 +400,9 @@ def main(first_run=True):
     plt.savefig(plot_path + 'city_sum.png')
     plt.show()
     plt.close()
+
+    if should_tweet:
+        make_tweet()
 
     try:
         while True:
