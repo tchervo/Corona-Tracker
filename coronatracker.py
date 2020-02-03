@@ -2,6 +2,7 @@ import os
 import time
 import logging
 import json
+import random
 from datetime import datetime
 
 import matplotlib.pyplot as plt
@@ -327,7 +328,9 @@ def get_most_recent_data(data_source: str) -> pd.DataFrame:
 def make_tweet():
     """Creates a tweet to post to Twitter"""
 
-    text = '2019-nCoV Update: This tracker detected new information'
+    hashtags = ['#nCoV', '#Coronavirus, #USCoronavirus', '#2019-nCoV']
+    chosen_tags = random.choices(hashtags, k=2)
+    text = f'2019-nCoV Update: This tracker detected new information {chosen_tags[0]} {chosen_tags[1]}'
     media_ids = []
     files = [plot_path + 'state_sum.png', plot_path + 'city_sum.png']
 
