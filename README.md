@@ -1,5 +1,5 @@
 # Corona-Tracker
-Tracker for 2019-nCoV in the United States using data from the U.S CDC and John Hopkins University
+Tracker for 2019-nCoV in the United States using data from the U.S CDC and John Hopkins University. This software powers a Twitter bot that you can follow [here](https://twitter.com/TrackerCorona)
 
 # About
 This software scrapes data from the [U.S Centers for Disease Control and Prevention](https://www.cdc.gov/coronavirus/2019-ncov/cases-in-us.html)
