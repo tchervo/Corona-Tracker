@@ -139,11 +139,38 @@ def get_jhu_data() -> pd.DataFrame:
         print('Found new data! Saving...')
         logger.info('Found new data! Now saving...')
         frame.to_csv(jhu_path + 'jhu_' + now_file_ext)
+        global should_tweet
         should_tweet = True
     else:
         logger.warning('Downloaded data is not new! Will not save')
 
     return frame
+
+
+def get_time_series():
+    """
+    Reads data from the JHU time series sheet
+    :return: A dataframe of the time series data for the U.S
+    """
+    time_sheet_id = '1UF2pSkFTURko2OvfHWWlFpDFAr1UxCBA4JLwlSP6KFo'
+    SCOPES = ['https://www.googleapis.com/auth/spreadsheets.readonly']
+    creds = ServiceAccountCredentials.from_json_keyfile_name('credentials.json', scopes=SCOPES)
+    client = gspread.authorize(creds)
+    sheet = client.open_by_key(time_sheet_id)
+    cases_sheet = sheet.worksheets()[0]
+
+    dates = []
+    states = []
+    cases = []
+
+    for row in cases_sheet.get_all_values():
+        country = row[1]
+
+        # Checks to see if we are in the column names row
+        if row[0] == 'Province/State':
+            date_times = row[5:len(row) - 1]
+        if country == 'US':
+            pass
 
 
 def get_data_for(name: str, var: str, data: pd.DataFrame, region='state') -> pd.Series:
@@ -260,6 +287,7 @@ def get_cdc_data() -> pd.DataFrame:
         print('Found new data! Saving...')
         logger.info('Found new data! Now saving...')
         frame.to_csv(cdc_path + 'cdc_' + now_file_ext)
+        global should_tweet
         should_tweet = True
     else:
         logger.warning('Downloaded data is not new! Will not save')
@@ -328,7 +356,7 @@ def get_most_recent_data(data_source: str) -> pd.DataFrame:
 def make_tweet():
     """Creates a tweet to post to Twitter"""
 
-    hashtags = ['#nCoV', '#Coronavirus, #USCoronavirus', '#2019-nCoV']
+    hashtags = ['#nCoV', '#Coronavirus', '#USCoronavirus', '#2019-nCoV']
     chosen_tags = random.choices(hashtags, k=2)
     text = f'2019-nCoV Update: This tracker detected new information {chosen_tags[0]} {chosen_tags[1]}'
     media_ids = []
@@ -337,6 +365,9 @@ def make_tweet():
     for file in files:
         response = api.media_upload(file)
         media_ids.append(response.media_id)
+
+    print('Sending tweet!')
+    logger.info('Found new data! Sending tweet!')
 
     api.update_status(status=text, media_ids=media_ids)
 
@@ -375,7 +406,7 @@ def main(first_run=True):
 
     print('Displaying plot!')
     # General Plot Setup
-    fig, (jhu_ax, cdc_ax) = plt.subplots(1, 2, figsize=(20, 20))
+    fig, (jhu_ax, cdc_ax) = plt.subplots(1, 2, figsize=(15, 10))
     fig.suptitle('2019-nCoV Details for the United States')
     # Plot setup for CDC figure
     cdc_ax.bar(x=cdc_frame['measure'], height=cdc_frame['counts'])
@@ -412,6 +443,7 @@ def main(first_run=True):
             print('Sleeping now for 30 minutes! Will check for new data afterwards...')
             time.sleep(60 * 30)
             main(first_run=False)
+            break
     except KeyboardInterrupt:
         print('Exiting...')
 
