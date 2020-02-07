@@ -242,11 +242,49 @@ def is_new_data(recent_data: pd.DataFrame, prev_data: pd.DataFrame, source: str)
     if prev_data.empty:
         return True
     else:
-        for column in columns:
-            for entry1, entry2 in zip(recent_data[column], prev_data[column]):
-                if entry1 != entry2:
+        # Since the CDC data is formatted consistently, particularly smart data checking is not needed
+        if source == 'cdc':
+            for column in columns:
+                for entry1, entry2 in zip(recent_data[column], prev_data[column]):
+                    if entry1 != entry2:
+                        is_new = True
+                        break
+        # JHU data requires a bit more thinking
+        if source == 'jhu':
+            states_new = []
+            states_old = []
+            city_new_data_map = {}
+            city_old_data_map = {}
+
+            # Suspected new data is suffixed with 'new' and suspected old data is suffixed with 'old'
+            for tuple_new, tuple_old in zip(recent_data.iterrows(), prev_data.iterrows()):
+                # Iterates through each value in the row
+                row_data_new = [entry for entry in tuple_new[1]]
+                state_new = row_data_new[0]
+                city_new = row_data_new[1]
+                case_data_new = row_data_new[2:5]
+
+                states_new.append(state_new)
+                city_new_data_map[city_new] = case_data_new
+
+                row_data_old = [entry for entry in tuple_old[1]]
+                state_old = row_data_old[1]
+                city_old = row_data_old[2]
+                case_data_old = row_data_old[3:6]
+
+                states_old.append(state_old)
+                city_old_data_map[city_old] = case_data_old
+
+            if states_new.sort() != states_old.sort():
+                is_new = True
+            for city in city_new_data_map.keys():
+                if city not in city_old_data_map.keys():
                     is_new = True
                     break
+                else:
+                    if city_new_data_map[city] != city_old_data_map[city]:
+                        is_new = True
+                        break
 
         return is_new
 
@@ -356,8 +394,8 @@ def get_most_recent_data(data_source: str) -> pd.DataFrame:
 def make_tweet():
     """Creates a tweet to post to Twitter"""
 
-    hashtags = ['#nCoV', '#Coronavirus', '#USCoronavirus', '#2019-nCoV']
-    chosen_tags = random.choices(hashtags, k=2)
+    hashtags = ['#nCoV', '#Coronavirus', '#USCoronavirus', '#2019nCoV']
+    chosen_tags = random.sample(hashtags, k=2)
     text = f'2019-nCoV Update: This tracker detected new information {chosen_tags[0]} {chosen_tags[1]}'
     media_ids = []
     files = [plot_path + 'state_sum.png', plot_path + 'city_sum.png']
@@ -404,9 +442,9 @@ def main(first_run=True):
     us_frame = get_jhu_data()
     cdc_frame = get_cdc_data()
 
-    print('Displaying plot!')
-    # General Plot Setup
-    fig, (jhu_ax, cdc_ax) = plt.subplots(1, 2, figsize=(15, 10))
+    print('Displaying plots!')
+    # General Plot Setup. Plots are "shown" then immediately closed to refresh the figure
+    fig, (jhu_ax, cdc_ax) = plt.subplots(1, 2, figsize=(20, 10))
     fig.suptitle('2019-nCoV Details for the United States')
     # Plot setup for CDC figure
     cdc_ax.bar(x=cdc_frame['measure'], height=cdc_frame['counts'])
@@ -422,21 +460,23 @@ def main(first_run=True):
     jhu_ax.set_ylabel('Confirmed Cases')
     jhu_ax.set_title('Confirmed 2019-nCoV Cases in the United States by State')
     plt.savefig(plot_path + 'state_sum.png')
-    plt.show()
+    plt.show(block=False)
     plt.close()
     # Plot setup for city data
     plt.title('2019-nCoV Cases by city')
     plt.gcf().set_size_inches(10, 10)
+    plt.xticks(rotation=45)
     plt.yticks(np.arange(start=0, stop=us_frame['cases'].max() + 1))
     plt.bar(x=us_frame['city'], height=us_frame['cases'])
     plt.xlabel('City')
     plt.ylabel('Confirmed Cases')
     plt.savefig(plot_path + 'city_sum.png')
-    plt.show()
+    plt.show(block=False)
     plt.close()
 
     if should_tweet:
-        make_tweet()
+        # make_tweet()
+        pass
 
     try:
         while True:
