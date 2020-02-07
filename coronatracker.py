@@ -256,7 +256,7 @@ def is_new_data(recent_data: pd.DataFrame, prev_data: pd.DataFrame, source: str)
             city_new_data_map = {}
             city_old_data_map = {}
 
-            # Suspected new data is suffixed with 'new' and suspected old data is suffixed with 'old'
+            # iterrows() returns a tuple of (index, data)
             for tuple_new, tuple_old in zip(recent_data.iterrows(), prev_data.iterrows()):
                 # Iterates through each value in the row
                 row_data_new = [entry for entry in tuple_new[1]]
@@ -267,6 +267,7 @@ def is_new_data(recent_data: pd.DataFrame, prev_data: pd.DataFrame, source: str)
                 states_new.append(state_new)
                 city_new_data_map[city_new] = case_data_new
 
+                # Data read from a CSV contains an index column, so data values are shifted one to the right
                 row_data_old = [entry for entry in tuple_old[1]]
                 state_old = row_data_old[1]
                 city_old = row_data_old[2]
@@ -475,7 +476,7 @@ def main(first_run=True):
     plt.close()
 
     if should_tweet:
-        # make_tweet()
+        make_tweet()
         pass
 
     try:
