@@ -13,6 +13,7 @@ from bs4 import BeautifulSoup
 from oauth2client.service_account import ServiceAccountCredentials
 import gspread
 import tweepy as tw
+from geohelper import *
 
 jhu_path = os.getcwd() + '/jhu_data/'
 cdc_path = os.getcwd() + '/cdc_data/'
@@ -91,7 +92,7 @@ def get_jhu_data() -> pd.DataFrame:
     creds = ServiceAccountCredentials.from_json_keyfile_name('credentials.json', scopes=SCOPES)
     client = gspread.authorize(creds)
     sheet = client.open_by_key(jhu_sheet_id)
-    newest_sheet = sheet.worksheets()[0]
+    newest_sheet = sheet.worksheets()[1]
 
     us_cities = []
     us_states = []
@@ -136,15 +137,51 @@ def get_jhu_data() -> pd.DataFrame:
     newest_data = get_most_recent_data('jhu')
 
     if is_new_data(frame, newest_data, 'jhu'):
-        print('Found new data! Saving...')
-        logger.info('Found new data! Now saving...')
-        frame.to_csv(jhu_path + 'jhu_' + now_file_ext)
         global should_tweet
         should_tweet = True
     else:
         logger.warning('Downloaded data is not new! Will not save')
 
     return frame
+
+
+def make_state_objects_from_data(data: pd.DataFrame, from_csv=False) -> [State]:
+    """
+    Creates either a city or state object from a DataFrame
+    :param from_csv: Should be true if the data was read in from a CSV to ensure correct column selection. Default false
+    :param data: The DataFrame to assemble the object from
+    :return: Either a city or state object, depending on what was specified
+    """
+
+    city_objs = []
+    state_objs = []
+    state_names = [name for name in data['state']]
+
+    for name in state_names:
+        for row_tuple in data.iterrows():
+            # Data read in from a CSV has an index column first, so we just have to shift over 1
+            if from_csv:
+                row_data = [entry for entry in row_tuple[1]]
+                c_name = row_data[2]
+                case_dat = row_data[3:6]
+
+                if row_data[1] == name:
+                    city_ob = City(city_name=c_name, case_info=case_dat)
+                    city_objs.append(city_ob)
+            else:
+                row_data = [entry for entry in row_tuple[1]]
+                c_name = row_data[1]
+                case_dat = row_data[2:5]
+
+                if row_data[0] == name:
+                    city_ob = City(city_name=c_name, case_info=case_dat)
+                    city_objs.append(city_ob)
+
+        state_ob = State(state_name=name, state_cities=city_objs)
+        state_objs.append(state_ob)
+        city_objs = []
+
+    return state_objs
 
 
 def get_time_series():
@@ -224,7 +261,7 @@ def make_state_frame(data: pd.DataFrame) -> pd.DataFrame:
     return pd.DataFrame(ret_data)
 
 
-def is_new_data(recent_data: pd.DataFrame, prev_data: pd.DataFrame, source: str) -> bool:
+def is_new_data(recent_data: pd.DataFrame, prev_data: pd.DataFrame, source: str):
     """
     Checks to see if the data that was recently fetched is the same as existing data
     :param source: The source of the data. Determines what columns to select. Valid inputs are cdc or jhu
@@ -233,6 +270,11 @@ def is_new_data(recent_data: pd.DataFrame, prev_data: pd.DataFrame, source: str)
     :return: True or false depending on whether or not the recent_data dataframe is newer than the previous one
     """
     columns = []
+    # Optional data to return
+    cities = []
+    states = []
+    case_data = []
+    cdc_tests = []
     is_new = False
     if source == 'jhu':
         columns = ['state', 'cases', 'deaths', 'recoveries']
@@ -392,23 +434,77 @@ def get_most_recent_data(data_source: str) -> pd.DataFrame:
         return pd.DataFrame()
 
 
-def make_tweet():
-    """Creates a tweet to post to Twitter"""
+def make_tweet(topic: str, updates: dict):
+    """
+    Creates a tweet to post to Twitter
+    :param updates: Updates in the data
+    :param topic: The data topic to tweet about. Either jhu, cdc, or 'both'
+    """
 
     hashtags = ['#nCoV', '#Coronavirus', '#USCoronavirus', '#2019nCoV']
     chosen_tags = random.sample(hashtags, k=2)
-    text = f'2019-nCoV Update: This tracker detected new information {chosen_tags[0]} {chosen_tags[1]}'
+    text = '2019-nCoV Update: This tracker has found new '
     media_ids = []
-    files = [plot_path + 'state_sum.png', plot_path + 'city_sum.png']
+    files = ['city_sum.png', 'state_sum.png', 'state_recov.png']
+
+    if topic == 'jhu' or topic == 'both':
+        for key in updates.keys():
+            if updates[key] != []:
+                if text == '2019-nCoV Update: This tracker has found new ':
+                    states_format = ''
+                    for name in updates[key]:
+                        if states_format == '':
+                            states_format = name
+                        else:
+                            states_format = states_format + f' and {name}'
+                    text = text + f'{key} in {states_format}'
+                else:
+                    for name in updates[key]:
+                        if states_format == '':
+                            states_format = name
+                        else:
+                            states_format = states_format + f' and {name}'
+                    text = text + f', and new {key} in {states_format}'
+            states_format = ''
+
+    if text == '2019-nCoV Update: This tracker has found new ':
+        text = f'2019-nCoV Update: This tracker has found new information from the CDC {chosen_tags[0]}' \
+               f' {chosen_tags[1]}'
+    else:
+        text = text + f' {chosen_tags[0]} {chosen_tags[1]}'
+
 
     for file in files:
-        response = api.media_upload(file)
+        response = api.media_upload(plot_path + file)
         media_ids.append(response.media_id)
 
     print('Sending tweet!')
     logger.info('Found new data! Sending tweet!')
 
     api.update_status(status=text, media_ids=media_ids)
+
+
+def get_updated_states(new_data: pd.DataFrame, old_data: pd.DataFrame, old_from_csv=True) -> dict:
+    """
+    Determines updates to state information
+    :param old_from_csv: Was the old data loaded from a CSV? Default is True
+    :param old_data: The DataFrame to which the new data will be compared to
+    :param new_data: A DataFrame containing state and city data
+    :return: A dictionary containing the list of states with new cases, deaths, and recoveries
+    """
+
+    new_state_objs = make_state_objects_from_data(new_data)
+    old_state_objs = make_state_objects_from_data(old_data, from_csv=old_from_csv)
+
+    # Have list comprehensions gone too far?
+    new_cases = [new_state.get_name() for new_state, old_state in zip(new_state_objs, old_state_objs)
+                 if new_state.get_cases() != old_state.get_cases()]
+    new_deaths = [new_state.get_name() for new_state, old_state in zip(new_state_objs, old_state_objs)
+                  if new_state.get_deaths() != old_state.get_deaths()]
+    new_recoveries = [new_state.get_name() for new_state, old_state in zip(new_state_objs, old_state_objs)
+                      if new_state.get_recoveries() != old_state.get_recoveries()]
+
+    return {'cases': new_cases, 'deaths': new_deaths, 'recoveries': new_recoveries}
 
 
 def main(first_run=True):
@@ -464,7 +560,7 @@ def main(first_run=True):
     plt.show(block=False)
     plt.close()
     # Plot setup for city data
-    plt.title('2019-nCoV Cases by city')
+    plt.title('2019-nCoV Cases by City')
     plt.gcf().set_size_inches(10, 10)
     plt.xticks(rotation=45)
     plt.yticks(np.arange(start=0, stop=us_frame['cases'].max() + 1))
@@ -474,10 +570,26 @@ def main(first_run=True):
     plt.savefig(plot_path + 'city_sum.png')
     plt.show(block=False)
     plt.close()
+    #Plot setup for recovery data
+    plt.title('2019-nCoV Recoveries by State')
+    plt.gcf().set_size_inches(10, 10)
+    plt.xticks(rotation=45)
+    plt.yticks(np.arange(start=0, stop=us_frame['recoveries'].max() + 1))
+    plt.bar(x=us_frame['state'], height=us_frame['recoveries'])
+    plt.xlabel('State')
+    plt.ylabel('Recoveries')
+    plt.savefig(plot_path + 'state_recov.png')
+    plt.show(block=False)
+    plt.close()
 
     if should_tweet:
-        make_tweet()
-        pass
+        # File saving had to be moved down here or else the tweet formatter would not be able to detect new data
+        old_data = get_most_recent_data('jhu')
+        updates = get_updated_states(us_frame, old_data)
+        make_tweet('jhu', updates)
+        print('Found new data! Saving...')
+        logger.info('Found new data! Now saving...')
+        us_frame.to_csv(jhu_path + 'jhu_' + now_file_ext)
 
     try:
         while True:
