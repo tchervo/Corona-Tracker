@@ -493,9 +493,6 @@ def make_tweet(topic: str, updates: dict):
     else:
         text = text + f' {chosen_tags[0]} {chosen_tags[1]}'
 
-    print(text)
-
-
     for file in files:
         response = api.media_upload(plot_path + file)
         media_ids.append(response.media_id)
@@ -503,7 +500,7 @@ def make_tweet(topic: str, updates: dict):
     print('Sending tweet!')
     logger.info('Found new data! Sending tweet!')
 
-    # api.update_status(status=text, media_ids=media_ids)
+    api.update_status(status=text, media_ids=media_ids)
 
 
 def get_updated_states(new_data: pd.DataFrame, old_data: pd.DataFrame, old_from_csv=True) -> dict:
