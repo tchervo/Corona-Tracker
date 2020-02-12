@@ -3,6 +3,7 @@ import time
 import logging
 import json
 import random
+import urllib
 from datetime import datetime
 
 import matplotlib.pyplot as plt
@@ -10,8 +11,6 @@ import numpy as np
 import pandas as pd
 import requests
 from bs4 import BeautifulSoup
-from oauth2client.service_account import ServiceAccountCredentials
-import gspread
 import tweepy as tw
 from geohelper import *
 
@@ -27,6 +26,7 @@ log_path = os.getcwd() + '/logs/coronatracker_log.log'
 log_format = '%(levelname)s | %(asctime)s | %(message)s'
 
 should_tweet = False
+should_save_jhu = False
 
 if os.path.exists(twitter_file):
     with open(twitter_file, 'r') as file:
@@ -81,55 +81,69 @@ logger = logging.getLogger()
 
 def get_jhu_data() -> pd.DataFrame:
     """
-    Connects to Google Sheets API and gets data for the United States from JHU's tracker
+    Reads the name of update files on JHU's Github, selects the most recent one, and then downloads that file as a
+    temp file to create a DataFrame. This DataFrame undergoes some reorganization to select for U.S data
     :return A pandas dataframe with columns state, city, cases, deaths, recoveries
     """
     logger.info('Attempting to connect to JHU sheet')
 
-    # Time series: 1UF2pSkFTURko2OvfHWWlFpDFAr1UxCBA4JLwlSP6KFo
-    jhu_sheet_id = '1wQVypefm946ch4XDp37uZ-wartW4V7ILdg-qYiDXUHM'
-    SCOPES = ['https://www.googleapis.com/auth/spreadsheets.readonly']
-    creds = ServiceAccountCredentials.from_json_keyfile_name('credentials.json', scopes=SCOPES)
-    client = gspread.authorize(creds)
-    sheet = client.open_by_key(jhu_sheet_id)
-    newest_sheet = sheet.worksheets()[1]
+    jhu_github_url = 'https://github.com/CSSEGISandData/2019-nCoV/tree/master/daily_case_updates'
+    github_req = requests.get(jhu_github_url)
+    git_soup = BeautifulSoup(github_req.content, features='html.parser')
 
-    us_cities = []
-    us_states = []
-    us_cases = []
-    us_deaths = []
-    us_recoveries = []
+    candidate_link = ''
+    curr_low_diff = None
 
-    for row in newest_sheet.get_all_values():
-        region = row[0]
-        country = row[1]
-        cases = row[3]
-        deaths = row[4]
-        recoveries = row[5]
+    for link in git_soup.find_all('a'):
+        if link.get('title') is not None and str(link.get('title')).endswith('.csv') and 'commit' not in \
+                str(link.get('href')):
+            file_name = link.get('title')
+            file_date = file_name.replace('.csv', '').split('-')
+            file_time = file_date[2].split('_')[1]
+            file_datetime = datetime(2020, int(file_date[0]), int(file_date[1]), int(file_time[0:2]),
+                                     int(file_time[2:4]))
 
-        if country == 'US':
-            # Regions don't get entered unless they have cases, so we know we can always convert this
-            cases = int(cases)
+            if curr_low_diff is None:
+                candidate_link = link.get('href')
+                curr_low_diff = now - file_datetime
+            else:
+                diff = now - file_datetime
 
-            # Deaths and recoveries are usually entered as a blank value if there are no values
-            # so we have to be careful
-            try:
-                deaths = int(deaths)
-                recoveries = int(recoveries)
-            except ValueError:
-                deaths = 0
-                recoveries = 0
+                if diff < curr_low_diff:
+                    curr_low_diff = diff
+                    candidate_link = link.get('href')
 
-            city, state = region.split(',')
+    file_link = str('https://raw.githubusercontent.com' + candidate_link).replace('blob/', '')
+    newest_csv_req = urllib.request.Request(file_link)
+    csv_file = urllib.request.urlopen(newest_csv_req)
+    csv_data = csv_file.read()
 
-            us_states.append(state_map[state.replace(' ', '')])
-            us_cities.append(city)
-            us_cases.append(cases)
-            us_deaths.append(deaths)
-            us_recoveries.append(recoveries)
+    with open(jhu_path + 'jhu_temp.csv', 'wb') as file:
+        file.write(csv_data)
 
-    data = {'state': us_states, 'city': us_cities, 'cases': us_cases, 'deaths': us_deaths, 'recoveries': us_recoveries}
-    frame = pd.DataFrame(data)
+    temp_frame = pd.read_csv(jhu_path + 'jhu_temp.csv')
+    us_frame = temp_frame[['Province/State', 'Country/Region', 'Confirmed', 'Deaths', 'Recovered']]
+    is_US = us_frame['Country/Region'] == 'US'
+    us_frame = us_frame[is_US]
+    us_frame.rename(columns={'Province/State': 'case_loc'}, inplace=True)
+    cities = []
+    states = []
+
+    for entry in us_frame.case_loc:
+        loc_list = entry.split(',')
+        cities.append(loc_list[0])
+        state_ab = loc_list[1].replace(' ', '')
+        state_name = state_map.get(state_ab)
+        states.append(state_name)
+
+    temp_state_city_frame = pd.DataFrame({'state': states, 'city': cities}).reset_index(drop=True)
+    us_frame = us_frame[['Confirmed', 'Deaths', 'Recovered']].reset_index(drop=True)
+    frame = temp_state_city_frame.join(us_frame)
+    rename_map = {'Confirmed': 'cases', 'Deaths': 'deaths', 'Recovered': 'recoveries'}
+
+    frame.rename(columns=rename_map, inplace=True)
+
+    os.remove(jhu_path + 'jhu_temp.csv')
 
     if frame.empty is not True:
         logger.info('Successfully downloaded JHU data! If new will save as jhu_{}'.format(now_file_ext))
@@ -138,7 +152,9 @@ def get_jhu_data() -> pd.DataFrame:
 
     if is_new_data(frame, newest_data, 'jhu'):
         global should_tweet
+        global should_save_jhu
         should_tweet = True
+        should_save_jhu = True
     else:
         logger.warning('Downloaded data is not new! Will not save')
 
@@ -155,7 +171,11 @@ def make_state_objects_from_data(data: pd.DataFrame, from_csv=False) -> [State]:
 
     city_objs = []
     state_objs = []
-    state_names = [name for name in data['state']]
+    state_names = []
+
+    for name in data['state']:
+        if name not in state_names:
+            state_names.append(name)
 
     for name in state_names:
         for row_tuple in data.iterrows():
@@ -184,30 +204,30 @@ def make_state_objects_from_data(data: pd.DataFrame, from_csv=False) -> [State]:
     return state_objs
 
 
-def get_time_series():
-    """
-    Reads data from the JHU time series sheet
-    :return: A dataframe of the time series data for the U.S
-    """
-    time_sheet_id = '1UF2pSkFTURko2OvfHWWlFpDFAr1UxCBA4JLwlSP6KFo'
-    SCOPES = ['https://www.googleapis.com/auth/spreadsheets.readonly']
-    creds = ServiceAccountCredentials.from_json_keyfile_name('credentials.json', scopes=SCOPES)
-    client = gspread.authorize(creds)
-    sheet = client.open_by_key(time_sheet_id)
-    cases_sheet = sheet.worksheets()[0]
-
-    dates = []
-    states = []
-    cases = []
-
-    for row in cases_sheet.get_all_values():
-        country = row[1]
-
-        # Checks to see if we are in the column names row
-        if row[0] == 'Province/State':
-            date_times = row[5:len(row) - 1]
-        if country == 'US':
-            pass
+# def get_time_series():
+#     """
+#     Reads data from the JHU time series sheet
+#     :return: A dataframe of the time series data for the U.S
+#     """
+#     time_sheet_id = '1UF2pSkFTURko2OvfHWWlFpDFAr1UxCBA4JLwlSP6KFo'
+#     SCOPES = ['https://www.googleapis.com/auth/spreadsheets.readonly']
+#     creds = ServiceAccountCredentials.from_json_keyfile_name('credentials.json', scopes=SCOPES)
+#     client = gspread.authorize(creds)
+#     sheet = client.open_by_key(time_sheet_id)
+#     cases_sheet = sheet.worksheets()[0]
+#
+#     dates = []
+#     states = []
+#     cases = []
+#
+#     for row in cases_sheet.get_all_values():
+#         country = row[1]
+#
+#         # Checks to see if we are in the column names row
+#         if row[0] == 'Province/State':
+#             date_times = row[5:len(row) - 1]
+#         if country == 'US':
+#             pass
 
 
 def get_data_for(name: str, var: str, data: pd.DataFrame, region='state') -> pd.Series:
@@ -441,7 +461,7 @@ def make_tweet(topic: str, updates: dict):
     :param topic: The data topic to tweet about. Either jhu, cdc, or 'both'
     """
 
-    hashtags = ['#nCoV', '#Coronavirus', '#USCoronavirus', '#2019nCoV']
+    hashtags = ['#nCoV', '#Coronavirus', '#USCoronavirus', '#2019nCoV', '#COVID19', '#USCOVID19']
     chosen_tags = random.sample(hashtags, k=2)
     text = '2019-nCoV Update: This tracker has found new '
     media_ids = []
@@ -473,6 +493,8 @@ def make_tweet(topic: str, updates: dict):
     else:
         text = text + f' {chosen_tags[0]} {chosen_tags[1]}'
 
+    print(text)
+
 
     for file in files:
         response = api.media_upload(plot_path + file)
@@ -481,7 +503,7 @@ def make_tweet(topic: str, updates: dict):
     print('Sending tweet!')
     logger.info('Found new data! Sending tweet!')
 
-    api.update_status(status=text, media_ids=media_ids)
+    # api.update_status(status=text, media_ids=media_ids)
 
 
 def get_updated_states(new_data: pd.DataFrame, old_data: pd.DataFrame, old_from_csv=True) -> dict:
@@ -495,6 +517,7 @@ def get_updated_states(new_data: pd.DataFrame, old_data: pd.DataFrame, old_from_
 
     new_state_objs = make_state_objects_from_data(new_data)
     old_state_objs = make_state_objects_from_data(old_data, from_csv=old_from_csv)
+    comb_iter = zip(new_state_objs, old_state_objs)
 
     # Have list comprehensions gone too far?
     new_cases = [new_state.get_name() for new_state, old_state in zip(new_state_objs, old_state_objs)
@@ -587,9 +610,10 @@ def main(first_run=True):
         old_data = get_most_recent_data('jhu')
         updates = get_updated_states(us_frame, old_data)
         make_tweet('jhu', updates)
-        print('Found new data! Saving...')
-        logger.info('Found new data! Now saving...')
-        us_frame.to_csv(jhu_path + 'jhu_' + now_file_ext)
+        if should_save_jhu:
+            print('Found new data! Saving...')
+            logger.info('Found new data! Now saving...')
+            us_frame.to_csv(jhu_path + 'jhu_' + now_file_ext)
 
     try:
         while True:
