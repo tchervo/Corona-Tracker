@@ -74,14 +74,3 @@ class State:
         all_recovs = [city.get_recoveries() for city in self.cities]
 
         return np.sum(all_recovs)
-
-
-    # def get_case_difference(self, comparison):
-    #     """
-    #     Calculates the difference in case data between this state and a comparison, and returns a list of
-    #     differences
-    #     :param comparison: The state to compare to. Should be a state object
-    #     :return: A list of differences in case information
-    #     """
-    #
-    #

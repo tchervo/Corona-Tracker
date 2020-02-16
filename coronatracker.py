@@ -87,7 +87,7 @@ def get_jhu_data() -> pd.DataFrame:
     """
     logger.info('Attempting to connect to JHU sheet')
 
-    jhu_github_url = 'https://github.com/CSSEGISandData/2019-nCoV/tree/master/daily_case_updates'
+    jhu_github_url = 'https://github.com/CSSEGISandData/COVID-19/tree/master/csse_covid_19_data/csse_covid_19_daily_reports'
     github_req = requests.get(jhu_github_url)
     git_soup = BeautifulSoup(github_req.content, features='html.parser')
 
@@ -99,9 +99,8 @@ def get_jhu_data() -> pd.DataFrame:
                 str(link.get('href')):
             file_name = link.get('title')
             file_date = file_name.replace('.csv', '').split('-')
-            file_time = file_date[2].split('_')[1]
-            file_datetime = datetime(2020, int(file_date[0]), int(file_date[1]), int(file_time[0:2]),
-                                     int(file_time[2:4]))
+            # file_time = file_date[2].split('_')[1]
+            file_datetime = datetime(2020, int(file_date[0]), int(file_date[1]))
 
             if curr_low_diff is None:
                 candidate_link = link.get('href')
@@ -188,6 +187,7 @@ def make_state_objects_from_data(data: pd.DataFrame, from_csv=False) -> [State]:
                 if row_data[1] == name:
                     city_ob = City(city_name=c_name, case_info=case_dat)
                     city_objs.append(city_ob)
+
             else:
                 row_data = [entry for entry in row_tuple[1]]
                 c_name = row_data[1]
@@ -198,6 +198,7 @@ def make_state_objects_from_data(data: pd.DataFrame, from_csv=False) -> [State]:
                     city_objs.append(city_ob)
 
         state_ob = State(state_name=name, state_cities=city_objs)
+
         state_objs.append(state_ob)
         city_objs = []
 
@@ -468,6 +469,7 @@ def make_tweet(topic: str, updates: dict):
     files = ['city_sum.png', 'state_sum.png', 'state_recov.png']
 
     if topic == 'jhu' or topic == 'both':
+        print(updates)
         for key in updates.keys():
             if updates[key] != []:
                 if text == '2019-nCoV Update: This tracker has found new ':
@@ -488,7 +490,7 @@ def make_tweet(topic: str, updates: dict):
             states_format = ''
 
     if text == '2019-nCoV Update: This tracker has found new ':
-        text = f'2019-nCoV Update: This tracker has found new information from the CDC {chosen_tags[0]}' \
+        text = f'2019-nCoV Update: This tracker has found new new cases in Texas {chosen_tags[0]}' \
                f' {chosen_tags[1]}'
     else:
         text = text + f' {chosen_tags[0]} {chosen_tags[1]}'
@@ -514,15 +516,28 @@ def get_updated_states(new_data: pd.DataFrame, old_data: pd.DataFrame, old_from_
 
     new_state_objs = make_state_objects_from_data(new_data)
     old_state_objs = make_state_objects_from_data(old_data, from_csv=old_from_csv)
-    comb_iter = zip(new_state_objs, old_state_objs)
 
-    # Have list comprehensions gone too far?
-    new_cases = [new_state.get_name() for new_state, old_state in zip(new_state_objs, old_state_objs)
-                 if new_state.get_cases() != old_state.get_cases()]
-    new_deaths = [new_state.get_name() for new_state, old_state in zip(new_state_objs, old_state_objs)
-                  if new_state.get_deaths() != old_state.get_deaths()]
-    new_recoveries = [new_state.get_name() for new_state, old_state in zip(new_state_objs, old_state_objs)
-                      if new_state.get_recoveries() != old_state.get_recoveries()]
+    new_cases = []
+    new_deaths = []
+    new_recoveries = []
+
+    for new_state in new_state_objs:
+        if new_state.get_name() not in [state.get_name() for state in old_state_objs]:
+            if new_state.get_recoveries() > 0:
+                new_recoveries.append(new_state.get_name())
+            if new_state.get_cases() > 0:
+                new_cases.append(new_state.get_name())
+            if new_state.get_deaths() > 0:
+                new_deaths.append(new_state.get_name())
+        else:
+            for old_state in old_state_objs:
+                if new_state.get_name() == old_state.get_name():
+                    if new_state.get_recoveries() > old_state.get_recoveries():
+                        new_recoveries.append(new_state.get_name())
+                    if new_state.get_cases() > old_state.get_cases():
+                        new_cases.append(new_state.get_name())
+                    if new_state.get_deaths() > old_state.get_deaths():
+                        new_deaths.append(new_state.get_name())
 
     return {'cases': new_cases, 'deaths': new_deaths, 'recoveries': new_recoveries}
 
