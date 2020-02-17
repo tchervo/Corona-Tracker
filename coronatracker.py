@@ -469,7 +469,6 @@ def make_tweet(topic: str, updates: dict):
     files = ['city_sum.png', 'state_sum.png', 'state_recov.png']
 
     if topic == 'jhu' or topic == 'both':
-        print(updates)
         for key in updates.keys():
             if updates[key] != []:
                 if text == '2019-nCoV Update: This tracker has found new ':
@@ -490,7 +489,7 @@ def make_tweet(topic: str, updates: dict):
             states_format = ''
 
     if text == '2019-nCoV Update: This tracker has found new ':
-        text = f'2019-nCoV Update: This tracker has found new new cases in Texas {chosen_tags[0]}' \
+        text = f'2019-nCoV Update: This tracker has found new information from the CDC {chosen_tags[0]}' \
                f' {chosen_tags[1]}'
     else:
         text = text + f' {chosen_tags[0]} {chosen_tags[1]}'
