@@ -205,30 +205,41 @@ def make_state_objects_from_data(data: pd.DataFrame, from_csv=False) -> [State]:
     return state_objs
 
 
-# def get_time_series():
-#     """
-#     Reads data from the JHU time series sheet
-#     :return: A dataframe of the time series data for the U.S
-#     """
-#     time_sheet_id = '1UF2pSkFTURko2OvfHWWlFpDFAr1UxCBA4JLwlSP6KFo'
-#     SCOPES = ['https://www.googleapis.com/auth/spreadsheets.readonly']
-#     creds = ServiceAccountCredentials.from_json_keyfile_name('credentials.json', scopes=SCOPES)
-#     client = gspread.authorize(creds)
-#     sheet = client.open_by_key(time_sheet_id)
-#     cases_sheet = sheet.worksheets()[0]
-#
-#     dates = []
-#     states = []
-#     cases = []
-#
-#     for row in cases_sheet.get_all_values():
-#         country = row[1]
-#
-#         # Checks to see if we are in the column names row
-#         if row[0] == 'Province/State':
-#             date_times = row[5:len(row) - 1]
-#         if country == 'US':
-#             pass
+def get_time_series():
+    """
+    Reads data from the JHU time series sheet from Github. Presently only gathers info on confirmed cases.
+    :return: A dataframe of the time series data for the U.S with columns for the location at which is was discovered
+    and a column for each day since tracking began.
+    """
+    logger.info('Attempting to connect to JHU time series sheet')
+
+    jhu_github_url = 'https://github.com/CSSEGISandData/COVID-19/tree/master/csse_covid_19_data/csse_covid_19_time_series'
+    github_req = requests.get(jhu_github_url)
+    git_soup = BeautifulSoup(github_req.content, features='html.parser')
+
+    candidate_link = ''
+
+    for link in git_soup.find_all('a'):
+        if link.get('title') == 'time_series_19-covid-Confirmed.csv':
+            candidate_link = link.get('href')
+
+    file_link = str('https://raw.githubusercontent.com' + candidate_link).replace('blob/', '')
+    newest_csv_req = urllib.request.Request(file_link)
+    csv_file = urllib.request.urlopen(newest_csv_req)
+    csv_data = csv_file.read()
+
+    with open(jhu_path + 'jhu_time_temp.csv', 'wb') as file:
+        file.write(csv_data)
+
+    ts_conf_frame = pd.read_csv(jhu_path + 'jhu_time_temp.csv')
+    is_US = ts_conf_frame['Country/Region'] == 'US'
+    ts_conf_frame = ts_conf_frame[is_US]
+    ts_conf_frame.drop(['Country/Region', 'Lat', 'Long'], axis=1, inplace=True)
+
+    os.remove(jhu_path + 'jhu_time_temp.csv')
+    ts_conf_frame.to_csv(jhu_path + 'jhu_time.csv')
+
+    return ts_conf_frame
 
 
 def get_data_for(name: str, var: str, data: pd.DataFrame, region='state') -> pd.Series:
@@ -411,7 +422,7 @@ def load_all_data(data_type: str) -> []:
                 data.append(file)
     if data_type.lower() == 'jhu':
         for file in os.listdir(jhu_path):
-            if file != '.DS_Store':
+            if file != '.DS_Store' or file != 'jhu_time.csv':
                 data.append(file)
 
     return data
@@ -471,7 +482,7 @@ def make_tweet(topic: str, updates: dict):
     if topic == 'jhu' or topic == 'both':
         for key in updates.keys():
             if updates[key] != []:
-                if text == '2019-nCoV Update: This tracker has found new ':
+                if text == 'COVID-19: This tracker has found new ':
                     states_format = ''
                     for name in updates[key]:
                         if states_format == '':
@@ -488,8 +499,8 @@ def make_tweet(topic: str, updates: dict):
                     text = text + f', and new {key} in {states_format}'
             states_format = ''
 
-    if text == '2019-nCoV Update: This tracker has found new ':
-        text = f'2019-nCoV Update: This tracker has found new information from the CDC {chosen_tags[0]}' \
+    if text == 'COVID-19 Update: This tracker has found new ':
+        text = f'COVID-19 Update: This tracker has found new information from the CDC {chosen_tags[0]}' \
                f' {chosen_tags[1]}'
     else:
         text = text + f' {chosen_tags[0]} {chosen_tags[1]}'
@@ -566,7 +577,7 @@ def main(first_run=True):
     if first_run:
         print('=' * 50,
               '\n',
-              spacer + '2019-nCoV Tracker (U.S)\n',
+              spacer + 'COVID-19 Tracker (U.S)\n',
               '=' * 50)
         print('To break this program out of its loop, press Ctrl+C')
 
@@ -604,7 +615,7 @@ def main(first_run=True):
     plt.savefig(plot_path + 'city_sum.png')
     plt.show(block=False)
     plt.close()
-    #Plot setup for recovery data
+    # Plot setup for recovery data
     plt.title('2019-nCoV Recoveries by State')
     plt.gcf().set_size_inches(10, 10)
     plt.xticks(rotation=45)
