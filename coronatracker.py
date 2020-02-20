@@ -234,7 +234,25 @@ def get_time_series():
     ts_conf_frame = pd.read_csv(jhu_path + 'jhu_time_temp.csv')
     is_US = ts_conf_frame['Country/Region'] == 'US'
     ts_conf_frame = ts_conf_frame[is_US]
-    ts_conf_frame.drop(['Country/Region', 'Lat', 'Long'], axis=1, inplace=True)
+
+    cities = []
+    states = []
+
+    for entry in ts_conf_frame['Province/State']:
+        loc_list = entry.split(',')
+        cities.append(loc_list[0])
+        state_ab = loc_list[1].replace(' ', '')
+        state_name = state_map.get(state_ab)
+        states.append(state_name)
+
+    ts_conf_frame.drop(['Country/Region', 'Lat', 'Long', 'Province/State'], axis=1, inplace=True)
+    ts_conf_frame['state'] = states
+    ts_conf_frame['city'] = cities
+
+    # Re-order columns to make state and city come first
+    columns = ts_conf_frame.columns.to_list()
+    columns = columns[-2:] + columns[:-2]
+    ts_conf_frame = ts_conf_frame[columns]
 
     os.remove(jhu_path + 'jhu_time_temp.csv')
     ts_conf_frame.to_csv(jhu_path + 'jhu_time.csv')
@@ -422,7 +440,7 @@ def load_all_data(data_type: str) -> []:
                 data.append(file)
     if data_type.lower() == 'jhu':
         for file in os.listdir(jhu_path):
-            if file != '.DS_Store' or file != 'jhu_time.csv':
+            if file != '.DS_Store' and file != 'jhu_time.csv':
                 data.append(file)
 
     return data
@@ -473,17 +491,18 @@ def make_tweet(topic: str, updates: dict):
     :param topic: The data topic to tweet about. Either jhu, cdc, or 'both'
     """
 
-    hashtags = ['#nCoV', '#Coronavirus', '#USCoronavirus', '#2019nCoV', '#COVID19', '#USCOVID19']
+    hashtags = ['#nCoV', '#Coronavirus', '#USCoronavirus', '#COVID19', '#USCOVID19']
     chosen_tags = random.sample(hashtags, k=2)
-    text = '2019-nCoV Update: This tracker has found new '
+    text = 'COVID-19 Update: This tracker has found new '
     media_ids = []
     files = ['city_sum.png', 'state_sum.png', 'state_recov.png']
 
     if topic == 'jhu' or topic == 'both':
         for key in updates.keys():
             if updates[key] != []:
-                if text == 'COVID-19: This tracker has found new ':
-                    states_format = ''
+                states_format = ''
+
+                if text == 'COVID-19 Update: This tracker has found new ':
                     for name in updates[key]:
                         if states_format == '':
                             states_format = name
@@ -649,3 +668,4 @@ def main(first_run=True):
 
 if __name__ == '__main__':
     main()
+    # get_time_series()
