@@ -74,3 +74,14 @@ class State:
         all_recovs = [city.get_recoveries() for city in self.cities]
 
         return np.sum(all_recovs)
+
+
+class StateTS:
+    """Contains state level data for a time series"""
+
+    def __init__(self, s_name: str, city_series: []):
+        self.name = s_name
+        self.city_data = city_series
+
+    def get_case_series(self):
+        return np.sum(self.city_data)

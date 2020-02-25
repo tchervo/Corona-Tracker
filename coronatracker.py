@@ -6,12 +6,12 @@ import random
 import urllib
 from datetime import datetime
 
-import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 import requests
 from bs4 import BeautifulSoup
 import tweepy as tw
+import dataproccessor as dp
 from geohelper import *
 
 jhu_path = os.getcwd() + '/jhu_data/'
@@ -122,9 +122,10 @@ def get_jhu_data() -> pd.DataFrame:
 
     temp_frame = pd.read_csv(jhu_path + 'jhu_temp.csv')
     us_frame = temp_frame[['Province/State', 'Country/Region', 'Confirmed', 'Deaths', 'Recovered']]
+    us_frame.rename(columns={'Province/State': 'case_loc'}, inplace=True)
     is_US = us_frame['Country/Region'] == 'US'
     us_frame = us_frame[is_US]
-    us_frame.rename(columns={'Province/State': 'case_loc'}, inplace=True)
+    us_frame = us_frame[~us_frame['case_loc'].str.contains('Diamond Princess')]
     cities = []
     states = []
 
@@ -155,7 +156,7 @@ def get_jhu_data() -> pd.DataFrame:
         should_tweet = True
         should_save_jhu = True
     else:
-        logger.warning('Downloaded data is not new! Will not save')
+        logger.warning('Downloaded JHU data is not new! Will not save')
 
     return frame
 
@@ -205,13 +206,13 @@ def make_state_objects_from_data(data: pd.DataFrame, from_csv=False) -> [State]:
     return state_objs
 
 
-def get_time_series():
+def get_time_series() -> pd.DataFrame:
     """
     Reads data from the JHU time series sheet from Github. Presently only gathers info on confirmed cases.
     :return: A dataframe of the time series data for the U.S with columns for the location at which is was discovered
     and a column for each day since tracking began.
     """
-    logger.info('Attempting to connect to JHU time series sheet')
+    logger.info('Attempting to download JHU time series sheet')
 
     jhu_github_url = 'https://github.com/CSSEGISandData/COVID-19/tree/master/csse_covid_19_data/csse_covid_19_time_series'
     github_req = requests.get(jhu_github_url)
@@ -254,8 +255,10 @@ def get_time_series():
     columns = columns[-2:] + columns[:-2]
     ts_conf_frame = ts_conf_frame[columns]
 
+    logger.info('Removing JHU temp file...')
     os.remove(jhu_path + 'jhu_time_temp.csv')
     ts_conf_frame.to_csv(jhu_path + 'jhu_time.csv')
+    logger.info('Saved time series data successfully!')
 
     return ts_conf_frame
 
@@ -395,16 +398,29 @@ def get_cdc_data() -> pd.DataFrame:
     measures = []
     values = []
 
-    table = cdc_soup.find('table')
+    # Selects for the first table
+    table = cdc_soup.find_all('table')[0]
     rows = table.find_all('tr')
 
     for entry in rows:
-        measure_name = str(entry.find('th').get_text()).replace('§', '').replace(':', '')
-        measure_val = int(entry.find('td').get_text())
+        entry_dat = entry.find_all('td')
+        # For whatever reason, the last two rows in the table have their data entered in a different way than the others
+        # This fixes that
+        final_measure_entries = entry.find('th')
 
-        if measure_name != 'Total':
-            measures.append(measure_name)
-            values.append(measure_val)
+        for table_data in entry_dat:
+            try:
+                values.append(int(table_data.get_text()))
+            except ValueError:
+                # Shortens the name of some measures to get them to fit on a figure
+                if 'Case' in table_data.get_text():
+                    measures.append('Confirmed Cases')
+                elif 'Person' in table_data.get_text():
+                    measures.append('Person-to-Person')
+                else:
+                    measures.append(table_data.get_text())
+        if final_measure_entries is not None:
+            measures.append(final_measure_entries.get_text())
 
     data = {'measure': measures, 'counts': values}
     frame = pd.DataFrame(data)
@@ -415,8 +431,8 @@ def get_cdc_data() -> pd.DataFrame:
     newest_data = get_most_recent_data('cdc')
 
     if is_new_data(frame, newest_data, 'cdc'):
-        print('Found new data! Saving...')
-        logger.info('Found new data! Now saving...')
+        print('Found new CDC data! Saving...')
+        logger.info('Found new CDC data! Now saving...')
         frame.to_csv(cdc_path + 'cdc_' + now_file_ext)
         global should_tweet
         should_tweet = True
@@ -603,48 +619,7 @@ def main(first_run=True):
     us_frame = get_jhu_data()
     cdc_frame = get_cdc_data()
 
-    print('Displaying plots!')
-    # General Plot Setup. Plots are "shown" then immediately closed to refresh the figure
-    fig, (jhu_ax, cdc_ax) = plt.subplots(1, 2, figsize=(20, 10))
-    fig.suptitle('2019-nCoV Details for the United States')
-    # Plot setup for CDC figure
-    cdc_ax.bar(x=cdc_frame['measure'], height=cdc_frame['counts'])
-    cdc_ax.set_xlabel('Test Result')
-    cdc_ax.set_ylabel('Count')
-    cdc_ax.set_title('Positive, Negative, and Pending 2019-nCoV Cases in the United States')
-    # Plot setup for JHU figure
-    state_frame = make_state_frame(us_frame)
-    # Interval is [Start, Stop) so we need to go one more
-    jhu_ax.set_yticks(np.arange(start=0, stop=state_frame['cases'].max() + 1))
-    jhu_ax.bar(x=state_frame['state'], height=state_frame['cases'])
-    jhu_ax.set_xlabel('State')
-    jhu_ax.set_ylabel('Confirmed Cases')
-    jhu_ax.set_title('Confirmed 2019-nCoV Cases in the United States by State')
-    plt.savefig(plot_path + 'state_sum.png')
-    plt.show(block=False)
-    plt.close()
-    # Plot setup for city data
-    plt.title('2019-nCoV Cases by City')
-    plt.gcf().set_size_inches(10, 10)
-    plt.xticks(rotation=45)
-    plt.yticks(np.arange(start=0, stop=us_frame['cases'].max() + 1))
-    plt.bar(x=us_frame['city'], height=us_frame['cases'])
-    plt.xlabel('City')
-    plt.ylabel('Confirmed Cases')
-    plt.savefig(plot_path + 'city_sum.png')
-    plt.show(block=False)
-    plt.close()
-    # Plot setup for recovery data
-    plt.title('2019-nCoV Recoveries by State')
-    plt.gcf().set_size_inches(10, 10)
-    plt.xticks(rotation=45)
-    plt.yticks(np.arange(start=0, stop=us_frame['recoveries'].max() + 1))
-    plt.bar(x=us_frame['state'], height=us_frame['recoveries'])
-    plt.xlabel('State')
-    plt.ylabel('Recoveries')
-    plt.savefig(plot_path + 'state_recov.png')
-    plt.show(block=False)
-    plt.close()
+    dp.make_plots([us_frame, cdc_frame])
 
     if should_tweet:
         # File saving had to be moved down here or else the tweet formatter would not be able to detect new data
@@ -652,8 +627,8 @@ def main(first_run=True):
         updates = get_updated_states(us_frame, old_data)
         make_tweet('jhu', updates)
         if should_save_jhu:
-            print('Found new data! Saving...')
-            logger.info('Found new data! Now saving...')
+            print('Found new JHU data! Saving...')
+            logger.info('Found new JHU data! Now saving...')
             us_frame.to_csv(jhu_path + 'jhu_' + now_file_ext)
 
     try:
@@ -668,4 +643,3 @@ def main(first_run=True):
 
 if __name__ == '__main__':
     main()
-    # get_time_series()
