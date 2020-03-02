@@ -155,6 +155,9 @@ def get_jhu_data() -> pd.DataFrame:
         global should_save_jhu
         should_tweet = True
         should_save_jhu = True
+
+        if get_most_recent_data('jhu').empty:
+            frame.to_csv(jhu_path + 'jhu_' + now_file_ext)
     else:
         logger.warning('Downloaded JHU data is not new! Will not save')
 
@@ -511,7 +514,7 @@ def make_tweet(topic: str, updates: dict):
     chosen_tags = random.sample(hashtags, k=2)
     text = 'COVID-19 Update: This tracker has found new '
     media_ids = []
-    files = ['city_sum.png', 'state_sum.png', 'state_recov.png']
+    files = ['city_sum.png', 'state_sum.png']
 
     if topic == 'jhu' or topic == 'both':
         for key in updates.keys():
@@ -535,10 +538,12 @@ def make_tweet(topic: str, updates: dict):
             states_format = ''
 
     if text == 'COVID-19 Update: This tracker has found new ':
-        text = f'COVID-19 Update: This tracker has found new information from the CDC {chosen_tags[0]}' \
+        text = f'COVID-19 Update: This tracker has found new information about COVID-19 {chosen_tags[0]}' \
                f' {chosen_tags[1]}'
     else:
         text = text + f' {chosen_tags[0]} {chosen_tags[1]}'
+
+    print(text)
 
     for file in files:
         response = api.media_upload(plot_path + file)
@@ -617,7 +622,7 @@ def main(first_run=True):
         print('To break this program out of its loop, press Ctrl+C')
 
     us_frame = get_jhu_data()
-    cdc_frame = get_cdc_data()
+    cdc_frame = None
 
     dp.make_plots([us_frame, cdc_frame])
 
