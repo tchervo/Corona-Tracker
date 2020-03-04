@@ -15,6 +15,9 @@ def make_plots(data: [pd.DataFrame]):
     ct.logger.info('Making plots...')
 
     us_frame = data[0]
+    has_many_cases = us_frame.cases > 1
+    # Only contains cities with more than one case in order to keep the city graph reasonable
+    opt_city_frame = us_frame[has_many_cases]
     # cdc_frame = data[1]
 
     # General Plot Setup. Plots are "shown" then immediately closed to refresh the figure
@@ -52,12 +55,12 @@ def make_plots(data: [pd.DataFrame]):
     # Plot setup for city data
     plt.title('COVID-19 Cases by City')
     plt.gcf().set_size_inches(12, 16)
-    pos_city = np.arange(len(us_frame['city']))
-    plt.yticks(np.arange(start=0, stop=us_frame['cases'].max() + 1))
-    city_case = plt.bar(pos_city, us_frame['cases'], width, label='City Cases')
-    city_death = plt.bar(pos_city, us_frame['deaths'], width, label='City Deaths')
-    city_recov = plt.bar(pos_city, us_frame['recoveries'], width, label='City Recoveries', bottom=us_frame['deaths'])
-    plt.xticks(pos_city, us_frame['city'].tolist(), fontsize=10, rotation=45)
+    pos_city = np.arange(len(opt_city_frame['city']))
+    plt.yticks(np.arange(start=0, stop=opt_city_frame['cases'].max() + 1))
+    city_case = plt.bar(pos_city, opt_city_frame['cases'], width, label='City Cases')
+    city_death = plt.bar(pos_city, opt_city_frame['deaths'], width, label='City Deaths')
+    city_recov = plt.bar(pos_city, opt_city_frame['recoveries'], width, label='City Recoveries', bottom=opt_city_frame['deaths'])
+    plt.xticks(pos_city, opt_city_frame['city'].tolist(), fontsize=10, rotation=45)
     plt.legend((city_case[0], city_death[0], city_recov[0]), ('Cases', 'Deaths', 'Recoveries'), loc='best')
     plt.xlabel('City')
     plt.ylabel('Count')
