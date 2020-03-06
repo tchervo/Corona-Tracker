@@ -510,7 +510,8 @@ def make_tweet(topic: str, updates: dict):
     :param topic: The data topic to tweet about. Either jhu, cdc, or 'both'
     """
 
-    hashtags = ['#nCoV', '#Coronavirus', '#USCoronavirus', '#COVID19', '#USCOVID19']
+    hashtags = ['#nCoV', '#Coronavirus', '#USCoronavirus', '#COVID19', '#USCOVID19', '#CoronaOutbreak',
+                '#CoronaAlert']
     chosen_tags = random.sample(hashtags, k=2)
     text = 'COVID-19 Update: This tracker has found new '
     media_ids = []

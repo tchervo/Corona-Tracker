@@ -38,7 +38,7 @@ def make_plots(data: [pd.DataFrame]):
     width = 0.7
     # Interval is [Start, Stop) so we need to go one more
     plt.gcf().set_size_inches(12, 12)
-    plt.yticks(np.arange(start=0, stop=state_frame['cases'].max() + 1))
+    plt.yticks(np.arange(start=0, stop=state_frame['cases'].max() + 1, step=5))
     case_bar = plt.bar(pos, state_frame['cases'], width, label='Cases')
     death_bar = plt.bar(pos, state_frame['deaths'], width, label='Deaths')
     recov_bar = plt.bar(pos, state_frame['recoveries'], width,
@@ -56,7 +56,7 @@ def make_plots(data: [pd.DataFrame]):
     plt.title('COVID-19 Cases by City')
     plt.gcf().set_size_inches(12, 16)
     pos_city = np.arange(len(opt_city_frame['city']))
-    plt.yticks(np.arange(start=0, stop=opt_city_frame['cases'].max() + 1))
+    plt.yticks(np.arange(start=0, stop=opt_city_frame['cases'].max() + 1, step=5))
     city_case = plt.bar(pos_city, opt_city_frame['cases'], width, label='City Cases')
     city_death = plt.bar(pos_city, opt_city_frame['deaths'], width, label='City Deaths')
     city_recov = plt.bar(pos_city, opt_city_frame['recoveries'], width, label='City Recoveries', bottom=opt_city_frame['deaths'])
