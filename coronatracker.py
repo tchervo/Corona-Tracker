@@ -516,6 +516,7 @@ def make_tweet(topic: str, updates: dict):
     text = 'COVID-19 Update: This tracker has found new '
     media_ids = []
     files = ['city_sum.png', 'state_sum.png']
+    multi_tweet = False
 
     if topic == 'jhu' or topic == 'both':
         for key in updates.keys():
@@ -544,6 +545,11 @@ def make_tweet(topic: str, updates: dict):
     else:
         text = text + f' {chosen_tags[0]} {chosen_tags[1]}'
 
+    if len(text) > 280:
+        text1 = text[:280]
+        text2 = text[280:]
+        multi_tweet = True
+
     print(text)
 
     for file in files:
@@ -553,7 +559,11 @@ def make_tweet(topic: str, updates: dict):
     print('Sending tweet!')
     logger.info('Found new data! Sending tweet!')
 
-    api.update_status(status=text, media_ids=media_ids)
+    if multi_tweet:
+        lead_tweet = api.update_status(status=text1, media_ids=media_ids)
+        api.update_status(status=text2, in_reply_to_status_id=lead_tweet.id)
+    else:
+        api.update_status(status=text, media_ids=media_ids)
 
 
 def get_updated_states(new_data: pd.DataFrame, old_data: pd.DataFrame, old_from_csv=True) -> dict:
