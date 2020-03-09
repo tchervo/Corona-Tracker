@@ -68,6 +68,11 @@ state_map = {'AL': 'Alabama', 'AK': 'Alaska', 'AZ': 'Arizona', 'CA': 'California
              'TN': 'Tennessee', 'TX': 'Texas', 'UT': 'Utah', 'VT': 'Vermont', 'VA': 'Virginia', 'WA': 'Washington',
              'WV': 'West Virginia', 'WI': 'Wisconsin', 'WY': 'Wyoming', 'D.C.': 'Washington D.C'}
 
+state_abb_map = {}
+
+for name, abb in zip(state_map.values(), state_map.keys()):
+    state_abb_map[name] = abb
+
 if os.path.exists(os.getcwd() + '/logs/') is not True:
     try:
         os.mkdir(os.getcwd() + '/logs/')
@@ -241,6 +246,7 @@ def get_time_series() -> pd.DataFrame:
     ts_conf_frame = pd.read_csv(jhu_path + 'jhu_time_temp.csv')
     is_US = ts_conf_frame['Country/Region'] == 'US'
     ts_conf_frame = ts_conf_frame[is_US]
+    ts_conf_frame = ts_conf_frame[~ts_conf_frame['Province/State'].str.contains('Princess')]
 
     cities = []
     states = []
@@ -518,7 +524,7 @@ def make_tweet(topic: str, updates: dict):
     chosen_tags = random.sample(hashtags, k=2)
     text = 'COVID-19 Update: This tracker has found new '
     media_ids = []
-    files = ['city_sum.png', 'state_sum.png']
+    files = ['city_sum.png', 'state_sum.png', 'rate_plot.png']
     multi_tweet = False
 
     if topic == 'jhu' or topic == 'both':
@@ -529,16 +535,16 @@ def make_tweet(topic: str, updates: dict):
                 if text == 'COVID-19 Update: This tracker has found new ':
                     for name in updates[key]:
                         if states_format == '':
-                            states_format = name
+                            states_format = state_abb_map[name]
                         else:
-                            states_format = states_format + f' and {name}'
+                            states_format = states_format + f' and {state_abb_map[name]}'
                     text = text + f'{key} in {states_format}'
                 else:
                     for name in updates[key]:
                         if states_format == '':
-                            states_format = name
+                            states_format = state_abb_map[name]
                         else:
-                            states_format = states_format + f' and {name}'
+                            states_format = states_format + f' and {state_abb_map[name]}'
                     text = text + f', and new {key} in {states_format}'
             states_format = ''
 
@@ -636,9 +642,8 @@ def main(first_run=True):
         print('To break this program out of its loop, press Ctrl+C')
 
     us_frame = get_jhu_data()
-    cdc_frame = None
 
-    dp.make_plots([us_frame, cdc_frame])
+    dp.make_plots([us_frame, get_time_series()])
 
     if should_tweet:
         # File saving had to be moved down here or else the tweet formatter would not be able to detect new data
