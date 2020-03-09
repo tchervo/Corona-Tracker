@@ -15,8 +15,8 @@ def make_plots(data: [pd.DataFrame]):
     ct.logger.info('Making plots...')
 
     us_frame = data[0]
-    has_many_cases = us_frame.cases > 1
-    # Only contains cities with more than one case in order to keep the city graph reasonable
+    has_many_cases = us_frame.cases > 2
+    # Only contains cities with a certain number of cases to reduce crowding
     opt_city_frame = us_frame[has_many_cases]
     # cdc_frame = data[1]
 
@@ -46,14 +46,14 @@ def make_plots(data: [pd.DataFrame]):
 
     plt.xlabel('State')
     plt.ylabel('Count')
-    plt.title('Confirmed COVID-19 Case Statistics in the United States by State')
+    plt.title('Confirmed COVID-19 Case Statistics in the United States by State with >2 Cases')
     plt.xticks(pos, state_frame['state'].tolist(), fontsize=10)
     plt.legend((case_bar[0], death_bar[0], recov_bar[0]), ('Cases', 'Deaths', 'Recoveries'), loc='upper right')
     plt.savefig(ct.plot_path + 'state_sum.png')
     plt.show(block=False)
     plt.close()
     # Plot setup for city data
-    plt.title('COVID-19 Cases by City')
+    plt.title('COVID-19 Cases by City with >2 Cases')
     plt.gcf().set_size_inches(12, 16)
     pos_city = np.arange(len(opt_city_frame['city']))
     plt.yticks(np.arange(start=0, stop=opt_city_frame['cases'].max() + 1, step=5))

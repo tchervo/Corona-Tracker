@@ -66,7 +66,7 @@ state_map = {'AL': 'Alabama', 'AK': 'Alaska', 'AZ': 'Arizona', 'CA': 'California
              'NC': 'North Carolina', 'ND': 'North Dakota', 'OH': 'Ohio', 'OK': 'Oklahoma', 'OR': 'Oregon',
              'PA': 'Pennsylvania', 'RI': 'Rhode Island', 'SC': 'South Carolina', 'SD': 'South Dakota',
              'TN': 'Tennessee', 'TX': 'Texas', 'UT': 'Utah', 'VT': 'Vermont', 'VA': 'Virginia', 'WA': 'Washington',
-             'WV': 'West Virginia', 'WI': 'Wisconsin', 'WY': 'Wyoming'}
+             'WV': 'West Virginia', 'WI': 'Wisconsin', 'WY': 'Wyoming', 'D.C.': 'Washington D.C'}
 
 if os.path.exists(os.getcwd() + '/logs/') is not True:
     try:
@@ -125,16 +125,19 @@ def get_jhu_data() -> pd.DataFrame:
     us_frame.rename(columns={'Province/State': 'case_loc'}, inplace=True)
     is_US = us_frame['Country/Region'] == 'US'
     us_frame = us_frame[is_US]
-    us_frame = us_frame[~us_frame['case_loc'].str.contains('Diamond Princess')]
+    us_frame = us_frame[~us_frame['case_loc'].str.contains('Princess')]
     cities = []
     states = []
 
     for entry in us_frame.case_loc:
         loc_list = entry.split(',')
         cities.append(loc_list[0])
-        state_ab = loc_list[1].replace(' ', '')
-        state_name = state_map.get(state_ab)
-        states.append(state_name)
+        try:
+            state_ab = loc_list[1].replace(' ', '')
+            state_name = state_map.get(state_ab)
+            states.append(state_name)
+        except IndexError:
+            print(f'{entry} is causing an error!')
 
     temp_state_city_frame = pd.DataFrame({'state': states, 'city': cities}).reset_index(drop=True)
     us_frame = us_frame[['Confirmed', 'Deaths', 'Recovered']].reset_index(drop=True)
