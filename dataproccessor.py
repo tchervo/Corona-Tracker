@@ -19,6 +19,7 @@ def make_plots(data: [pd.DataFrame]):
     # Threshold number of cases needed to be displayed
     case_limit = 3
     has_many_cases = us_frame.cases > case_limit
+    us_frame = us_frame[has_many_cases]
     # Only contains cities with a certain number of cases to reduce crowding
     us_frame[has_many_cases]
     # cdc_frame = data[1]
@@ -86,7 +87,7 @@ def make_time_series_plot(freqs: list):
 
     days = len(freqs)
 
-    plt.title('Number of Cases per Day in the United States')
+    plt.title('Cumulative Cases per Day in the United States')
     plt.gcf().set_size_inches(8, 8)
     plt.plot(np.arange(start=1, stop=days + 1), freqs, color='red')
     plt.xlabel('Days Since 01/21/2020')
