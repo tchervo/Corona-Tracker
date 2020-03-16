@@ -28,6 +28,23 @@ log_format = '%(levelname)s | %(asctime)s | %(message)s'
 should_tweet = False
 should_save_jhu = False
 
+state_map = {'AL': 'Alabama', 'AK': 'Alaska', 'AR': 'Arkansas', 'AZ': 'Arizona', 'CA': 'California', 'CO': 'Colorado',
+             'CT': 'Connecticut', 'DE': 'Delaware', 'FL': 'Florida', 'GA': 'Georgia', 'HI': 'Hawaii',
+             'ID': 'Idaho', 'IL': 'Illinois', 'IN': 'Indiana', 'IA': 'Iowa', 'KS': 'Kansas', 'KY': 'Kentucky',
+             'LA': 'Louisiana', 'ME': 'Maine', 'MD': 'Maryland', 'MA': 'Massachusetts', 'MI': 'Michigan',
+             'MN': 'Minnesota', 'MS': 'Mississippi', 'MO': 'Missouri', 'MT': 'Montana', 'NE': 'Nebraska',
+             'NV': 'Nevada', 'NH': 'New Hampshire', 'NJ': 'New Jersey', 'NM': 'New Mexico', 'NY': 'New York',
+             'NC': 'North Carolina', 'ND': 'North Dakota', 'OH': 'Ohio', 'OK': 'Oklahoma', 'OR': 'Oregon',
+             'PA': 'Pennsylvania', 'RI': 'Rhode Island', 'SC': 'South Carolina', 'SD': 'South Dakota',
+             'TN': 'Tennessee', 'TX': 'Texas', 'UT': 'Utah', 'VT': 'Vermont', 'VA': 'Virginia', 'WA': 'Washington',
+             'WV': 'West Virginia', 'WI': 'Wisconsin', 'WY': 'Wyoming', 'D.C.': 'Washington D.C', 'P.R.': 'Puerto Rico',
+             'VI': 'Virgin Islands, U.S.'}
+
+state_abb_map = {}
+
+for name, abb in zip(state_map.values(), state_map.keys()):
+    state_abb_map[name] = abb
+
 if os.path.exists(twitter_file):
     with open(twitter_file, 'r') as file:
         twitter_creds = json.load(file)
@@ -56,22 +73,6 @@ else:
         json.dump(data, file)
 
 api = tw.API(auth, wait_on_rate_limit=True)
-
-state_map = {'AL': 'Alabama', 'AK': 'Alaska', 'AZ': 'Arizona', 'CA': 'California', 'CO': 'Colorado',
-             'CT': 'Connecticut', 'DE': 'Delaware', 'FL': 'Florida', 'GA': 'Georgia', 'HI': 'Hawaii',
-             'ID': 'Idaho', 'IL': 'Illinois', 'IN': 'Indiana', 'IA': 'Iowa', 'KS': 'Kansas', 'KY': 'Kentucky',
-             'LA': 'Louisiana', 'ME': 'Maine', 'MD': 'Maryland', 'MA': 'Massachusetts', 'MI': 'Michigan',
-             'MN': 'Minnesota', 'MS': 'Mississippi', 'MO': 'Missouri', 'MT': 'Montana', 'NE': 'Nebraska',
-             'NV': 'Nevada', 'NH': 'New Hampshire', 'NJ': 'New Jersey', 'NM': 'New Mexico', 'NY': 'New York',
-             'NC': 'North Carolina', 'ND': 'North Dakota', 'OH': 'Ohio', 'OK': 'Oklahoma', 'OR': 'Oregon',
-             'PA': 'Pennsylvania', 'RI': 'Rhode Island', 'SC': 'South Carolina', 'SD': 'South Dakota',
-             'TN': 'Tennessee', 'TX': 'Texas', 'UT': 'Utah', 'VT': 'Vermont', 'VA': 'Virginia', 'WA': 'Washington',
-             'WV': 'West Virginia', 'WI': 'Wisconsin', 'WY': 'Wyoming', 'D.C.': 'Washington D.C'}
-
-state_abb_map = {}
-
-for name, abb in zip(state_map.values(), state_map.keys()):
-    state_abb_map[name] = abb
 
 if os.path.exists(os.getcwd() + '/logs/') is not True:
     try:
@@ -131,45 +132,31 @@ def get_jhu_data() -> pd.DataFrame:
     is_US = us_frame['Country/Region'] == 'US'
     us_frame = us_frame[is_US]
     us_frame = us_frame[~us_frame['case_loc'].str.contains('Princess')]
-    cities = []
-    states = []
 
-    for entry in us_frame.case_loc:
-        loc_list = entry.split(',')
-        cities.append(loc_list[0])
-        try:
-            state_ab = loc_list[1].replace(' ', '')
-            state_name = state_map.get(state_ab)
-            states.append(state_name)
-        except IndexError:
-            print(f'{entry} is causing an error!')
+    us_frame = us_frame[['case_loc', 'Confirmed', 'Deaths', 'Recovered']]
+    rename_map = {'case_loc': 'state', 'Confirmed': 'cases', 'Deaths': 'deaths', 'Recovered': 'recoveries'}
 
-    temp_state_city_frame = pd.DataFrame({'state': states, 'city': cities}).reset_index(drop=True)
-    us_frame = us_frame[['Confirmed', 'Deaths', 'Recovered']].reset_index(drop=True)
-    frame = temp_state_city_frame.join(us_frame)
-    rename_map = {'Confirmed': 'cases', 'Deaths': 'deaths', 'Recovered': 'recoveries'}
-
-    frame.rename(columns=rename_map, inplace=True)
+    us_frame.rename(columns=rename_map, inplace=True)
 
     os.remove(jhu_path + 'jhu_temp.csv')
 
-    if frame.empty is not True:
+    if us_frame.empty is not True:
         logger.info('Successfully downloaded JHU data! If new will save as jhu_{}'.format(now_file_ext))
 
     newest_data = get_most_recent_data('jhu')
 
-    if is_new_data(frame, newest_data, 'jhu'):
+    if is_new_data(us_frame, newest_data, 'jhu'):
         global should_tweet
         global should_save_jhu
         should_tweet = True
         should_save_jhu = True
 
         if get_most_recent_data('jhu').empty:
-            frame.to_csv(jhu_path + 'jhu_' + now_file_ext)
+            us_frame.to_csv(jhu_path + 'jhu_' + now_file_ext)
     else:
         logger.warning('Downloaded JHU data is not new! Will not save')
 
-    return frame
+    return us_frame
 
 
 def make_state_objects_from_data(data: pd.DataFrame, from_csv=False) -> [State]:
@@ -180,7 +167,6 @@ def make_state_objects_from_data(data: pd.DataFrame, from_csv=False) -> [State]:
     :return: Either a city or state object, depending on what was specified
     """
 
-    city_objs = []
     state_objs = []
     state_names = []
 
@@ -193,86 +179,85 @@ def make_state_objects_from_data(data: pd.DataFrame, from_csv=False) -> [State]:
             # Data read in from a CSV has an index column first, so we just have to shift over 1
             if from_csv:
                 row_data = [entry for entry in row_tuple[1]]
-                c_name = row_data[2]
-                case_dat = row_data[3:6]
-
                 if row_data[1] == name:
-                    city_ob = City(city_name=c_name, case_info=case_dat)
-                    city_objs.append(city_ob)
+                    case_dat = row_data[2:5]
+                    state_ob = State(state_name=name, state_cases=case_dat[0], state_deaths=case_dat[1],
+                                     state_recoveries=case_dat[2])
 
+                    state_objs.append(state_ob)
             else:
                 row_data = [entry for entry in row_tuple[1]]
-                c_name = row_data[1]
-                case_dat = row_data[2:5]
-
                 if row_data[0] == name:
-                    city_ob = City(city_name=c_name, case_info=case_dat)
-                    city_objs.append(city_ob)
+                    case_dat = row_data[1:4]
+                    state_ob = State(state_name=name, state_cases=case_dat[0], state_deaths=case_dat[1],
+                                     state_recoveries=case_dat[2])
 
-        state_ob = State(state_name=name, state_cities=city_objs)
-
-        state_objs.append(state_ob)
-        city_objs = []
+                    state_objs.append(state_ob)
 
     return state_objs
 
 
-def get_time_series() -> pd.DataFrame:
+def get_time_series(from_file=False) -> pd.DataFrame:
     """
     Reads data from the JHU time series sheet from Github. Presently only gathers info on confirmed cases.
+    :param: from_file: SHould the DataFrame be read in from a file? Default is false
     :return: A dataframe of the time series data for the U.S with columns for the location at which is was discovered
     and a column for each day since tracking began.
     """
-    logger.info('Attempting to download JHU time series sheet')
 
-    jhu_github_url = 'https://github.com/CSSEGISandData/COVID-19/tree/master/csse_covid_19_data/csse_covid_19_time_series'
-    github_req = requests.get(jhu_github_url)
-    git_soup = BeautifulSoup(github_req.content, features='html.parser')
+    if from_file:
+        return pd.read_csv(jhu_path + 'jhu_time.csv')
+    else:
+        logger.info('Attempting to download JHU time series sheet')
 
-    candidate_link = ''
+        jhu_github_url = 'https://github.com/CSSEGISandData/COVID-19/tree/master/csse_covid_19_data/csse_covid_19_time_series'
+        github_req = requests.get(jhu_github_url)
+        git_soup = BeautifulSoup(github_req.content, features='html.parser')
 
-    for link in git_soup.find_all('a'):
-        if link.get('title') == 'time_series_19-covid-Confirmed.csv':
-            candidate_link = link.get('href')
+        candidate_link = ''
 
-    file_link = str('https://raw.githubusercontent.com' + candidate_link).replace('blob/', '')
-    newest_csv_req = urllib.request.Request(file_link)
-    csv_file = urllib.request.urlopen(newest_csv_req)
-    csv_data = csv_file.read()
+        for link in git_soup.find_all('a'):
+            if link.get('title') == 'time_series_19-covid-Confirmed.csv':
+                candidate_link = link.get('href')
 
-    with open(jhu_path + 'jhu_time_temp.csv', 'wb') as file:
-        file.write(csv_data)
+        file_link = str('https://raw.githubusercontent.com' + candidate_link).replace('blob/', '')
+        newest_csv_req = urllib.request.Request(file_link)
+        csv_file = urllib.request.urlopen(newest_csv_req)
+        csv_data = csv_file.read()
 
-    ts_conf_frame = pd.read_csv(jhu_path + 'jhu_time_temp.csv')
-    is_US = ts_conf_frame['Country/Region'] == 'US'
-    ts_conf_frame = ts_conf_frame[is_US]
-    ts_conf_frame = ts_conf_frame[~ts_conf_frame['Province/State'].str.contains('Princess')]
+        with open(jhu_path + 'jhu_time_temp.csv', 'wb') as file:
+            file.write(csv_data)
 
-    cities = []
-    states = []
+        ts_conf_frame = pd.read_csv(jhu_path + 'jhu_time_temp.csv')
+        is_US = ts_conf_frame['Country/Region'] == 'US'
+        ts_conf_frame = ts_conf_frame[is_US]
+        ts_conf_frame = ts_conf_frame[~ts_conf_frame['Province/State'].str.contains('Princess')]
 
-    for entry in ts_conf_frame['Province/State']:
-        loc_list = entry.split(',')
-        cities.append(loc_list[0])
-        state_ab = loc_list[1].replace(' ', '')
-        state_name = state_map.get(state_ab)
-        states.append(state_name)
+        ts_conf_frame.drop(['Country/Region', 'Lat', 'Long'], axis=1, inplace=True)
+        ts_conf_frame.rename(columns={'Province/State': 'state'}, inplace=True)
 
-    ts_conf_frame.drop(['Country/Region', 'Lat', 'Long', 'Province/State'], axis=1, inplace=True)
-    ts_conf_frame['state'] = states
-    ts_conf_frame['city'] = cities
+        logger.info('Removing JHU temp file...')
+        os.remove(jhu_path + 'jhu_time_temp.csv')
+        ts_conf_frame.to_csv(jhu_path + 'jhu_time.csv')
+        logger.info('Saved time series data successfully!')
 
-    # Re-order columns to make state and city come first
-    columns = ts_conf_frame.columns.to_list()
-    columns = columns[-2:] + columns[:-2]
-    ts_conf_frame = ts_conf_frame[columns]
+        return ts_conf_frame
 
-    logger.info('Removing JHU temp file...')
-    os.remove(jhu_path + 'jhu_time_temp.csv')
-    ts_conf_frame.to_csv(jhu_path + 'jhu_time.csv')
-    logger.info('Saved time series data successfully!')
 
-    return ts_conf_frame
+def get_daily_change(time_data: pd.DataFrame) -> int:
+    """
+    Calculate the daily change in cases from time series data
+    :param time_data: The JHU time series DataFrame
+    :return: The difference in cases between the most recent day and the one before it
+    """
+
+    newest_column_date = time_data.columns.to_list()[-1:]
+    prev_column_date = time_data.columns.to_list()[-2:-1]
+
+    newest_column_sum = time_data[newest_column_date].sum()
+    prev_column_sum = time_data[prev_column_date].sum()
+
+    return int(newest_column_sum) - int(prev_column_sum)
 
 
 def get_data_for(name: str, var: str, data: pd.DataFrame, region='state') -> pd.Series:
@@ -335,11 +320,6 @@ def is_new_data(recent_data: pd.DataFrame, prev_data: pd.DataFrame, source: str)
     :return: True or false depending on whether or not the recent_data dataframe is newer than the previous one
     """
     columns = []
-    # Optional data to return
-    cities = []
-    states = []
-    case_data = []
-    cdc_tests = []
     is_new = False
     if source == 'jhu':
         columns = ['state', 'cases', 'deaths', 'recoveries']
@@ -360,39 +340,27 @@ def is_new_data(recent_data: pd.DataFrame, prev_data: pd.DataFrame, source: str)
         if source == 'jhu':
             states_new = []
             states_old = []
-            city_new_data_map = {}
-            city_old_data_map = {}
 
             # iterrows() returns a tuple of (index, data)
             for tuple_new, tuple_old in zip(recent_data.iterrows(), prev_data.iterrows()):
                 # Iterates through each value in the row
                 row_data_new = [entry for entry in tuple_new[1]]
                 state_new = row_data_new[0]
-                city_new = row_data_new[1]
-                case_data_new = row_data_new[2:5]
+                case_data_new = row_data_new[1:4]
 
                 states_new.append(state_new)
-                city_new_data_map[city_new] = case_data_new
 
                 # Data read from a CSV contains an index column, so data values are shifted one to the right
                 row_data_old = [entry for entry in tuple_old[1]]
                 state_old = row_data_old[1]
-                city_old = row_data_old[2]
-                case_data_old = row_data_old[3:6]
+                case_data_old = row_data_old[2:5]
 
                 states_old.append(state_old)
-                city_old_data_map[city_old] = case_data_old
 
             if states_new.sort() != states_old.sort():
                 is_new = True
-            for city in city_new_data_map.keys():
-                if city not in city_old_data_map.keys():
-                    is_new = True
-                    break
-                else:
-                    if city_new_data_map[city] != city_old_data_map[city]:
-                        is_new = True
-                        break
+            if case_data_old != case_data_new:
+                is_new = True
 
         return is_new
 
@@ -520,14 +488,15 @@ def make_tweet(topic: str, updates: dict):
     """
 
     hashtags = ['#nCoV', '#Coronavirus', '#USCoronavirus', '#COVID19', '#USCOVID19', '#CoronaOutbreak',
-                '#CoronaAlert']
+                '#CoronaAlert', '#COVID_19', '#CoronaPandemic']
     chosen_tags = random.sample(hashtags, k=2)
     text = 'COVID-19 Update: This tracker has found new '
     media_ids = []
-    files = ['city_sum.png', 'state_sum.png', 'rate_plot.png']
+    files = ['state_sum.png', 'rate_plot.png']
     multi_tweet = False
 
-    if topic == 'jhu' or topic == 'both':
+    # Formats a tweet with all the updated states' abbreviations
+    if topic == 'names':
         for key in updates.keys():
             if updates[key] != []:
                 states_format = ''
@@ -548,11 +517,15 @@ def make_tweet(topic: str, updates: dict):
                     text = text + f', and new {key} in {states_format}'
             states_format = ''
 
-    if text == 'COVID-19 Update: This tracker has found new ':
-        text = f'COVID-19 Update: This tracker has found new information about COVID-19 {chosen_tags[0]}' \
-               f' {chosen_tags[1]}'
+    # Formats a tweet with change in cases per day across all the updated states
+    elif topic == 'change':
+        new_state_len = len(updates['cases'])
+        change = get_daily_change(get_time_series(from_file=True))
+
+        text = f'COVID-19 Update: This tracker has found {change} new cases in {new_state_len} ' \
+               f'U.S states and territories {chosen_tags[0]} {chosen_tags[1]}'
     else:
-        text = text + f' {chosen_tags[0]} {chosen_tags[1]}'
+        text = input('Please enter tweet text: ')
 
     if len(text) > 280:
         text1 = text[:280]
@@ -649,7 +622,7 @@ def main(first_run=True):
         # File saving had to be moved down here or else the tweet formatter would not be able to detect new data
         old_data = get_most_recent_data('jhu')
         updates = get_updated_states(us_frame, old_data)
-        make_tweet('jhu', updates)
+        make_tweet('change', updates)
         if should_save_jhu:
             print('Found new JHU data! Saving...')
             logger.info('Found new JHU data! Now saving...')
