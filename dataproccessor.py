@@ -18,10 +18,9 @@ def make_plots(data: [pd.DataFrame]):
 
     us_frame = data[0]
     ts_data = data[1]
-    # Threshold number of cases needed to be displayed
-    case_limit = 20
-    has_many_cases = us_frame.cases > case_limit
-    us_frame = us_frame[has_many_cases]
+    # Select the top 25 states
+    us_frame.sort_values(by='cases', axis=0, ascending=False, inplace=True)
+    us_frame = us_frame.iloc[np.arange(0, 26), [0, 1, 2, 3]]
 
     # General Plot Setup. Plots are "shown" then immediately closed to refresh the figure
     plt.style.use('fivethirtyeight')
@@ -30,11 +29,6 @@ def make_plots(data: [pd.DataFrame]):
         jhu_tick.set_rotation(45)
 
     plt.suptitle('COVID-19 Details for the United States')
-    # Plot setup for CDC figure
-    # cdc_ax.bar(x=cdc_frame['measure'], height=cdc_frame['counts'])
-    # cdc_ax.set_xlabel('Test Result')
-    # cdc_ax.set_ylabel('Count')
-    # cdc_ax.set_title('U.S COVID-19 Cases and Transmission Route')
 
     # Plot setup for JHU figure
     state_frame = ct.make_state_frame(us_frame)
@@ -42,7 +36,13 @@ def make_plots(data: [pd.DataFrame]):
     width = 0.7
     # Interval is [Start, Stop) so we need to go one more
     plt.gcf().set_size_inches(14, 14)
-    plt.yticks(np.arange(start=0, stop=state_frame['cases'].max() + 1, step=20))
+
+    # Tries to find a visually appealing number of y ticks
+    jhu_step = 50
+    while len(np.arange(start=state_frame['cases'].min(), stop=state_frame['cases'].max() + 1, step=jhu_step)) > 34:
+        jhu_step += 10
+
+    plt.yticks(np.arange(start=state_frame['cases'].min(), stop=state_frame['cases'].max() + 1, step=jhu_step))
     case_bar = plt.bar(pos, state_frame['cases'], width, label='Cases')
     death_bar = plt.bar(pos, state_frame['deaths'], width, label='Deaths')
     recov_bar = plt.bar(pos, state_frame['recoveries'], width,
@@ -50,7 +50,7 @@ def make_plots(data: [pd.DataFrame]):
 
     plt.xlabel('State')
     plt.ylabel('Count')
-    plt.title(f'Confirmed COVID-19 Case Statistics in U.S States with at least {case_limit} Cases')
+    plt.title(f'Confirmed COVID-19 Case Statistics for the Top 25 States by Caseload')
     plt.xticks(pos, state_frame['state'].tolist(), fontsize=10)
     plt.legend((case_bar[0], death_bar[0], recov_bar[0]), ('Cases', 'Deaths', 'Recoveries'), loc='upper right')
     plt.savefig(ct.plot_path + 'state_sum.png')
