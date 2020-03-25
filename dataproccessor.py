@@ -20,7 +20,6 @@ def make_plots(data: [pd.DataFrame]):
     ts_data = data[1]
     # Select the top 25 states
     us_frame.sort_values(by='cases', axis=0, ascending=False, inplace=True)
-    us_frame = us_frame.iloc[np.arange(0, 26), [0, 1, 2, 3]]
 
     # General Plot Setup. Plots are "shown" then immediately closed to refresh the figure
     plt.style.use('fivethirtyeight')
@@ -32,6 +31,8 @@ def make_plots(data: [pd.DataFrame]):
 
     # Plot setup for JHU figure
     state_frame = ct.make_state_frame(us_frame)
+    state_frame = state_frame.iloc[np.arange(0, 26), [0, 1, 2, 3]]
+
     pos = np.arange(len(state_frame['state']))
     width = 0.7
     # Interval is [Start, Stop) so we need to go one more
@@ -57,9 +58,13 @@ def make_plots(data: [pd.DataFrame]):
     plt.show(block=False)
     plt.close()
 
-    # Time Series Plot
+    # Time Series Cumulative Plot
     freqs = get_country_cumulative(ts_data)
     make_time_series_plot(freqs)
+
+    # Daily Change Plot
+    changes = get_total_daily_change(ts_data)
+    make_daily_change_plot(changes)
 
     ct.logger.info('Created plots!')
 
@@ -92,6 +97,26 @@ def make_time_series_plot(freqs: list):
     plt.close()
 
 
+def make_daily_change_plot(changes: []):
+    """
+    Plots the daily change in cases
+    :param changes: A list of the changes that have occured each day
+    """
+
+    # Plus 1 because numpy stops 1 before the max value
+    days = len(changes) + 1
+
+    plt.title('Daily Change in Cases Since 01/22/2020')
+    plt.xlabel('Days since 01/22/2020')
+    plt.ylabel('Change in Cases from Previous Day')
+
+    plt.plot(np.arange(1, stop=days), changes, color='red')
+
+    plt.savefig(ct.plot_path + 'change_plot.png')
+    plt.show(block=False)
+    plt.close()
+
+
 def get_country_cumulative(data: pd.DataFrame) -> list:
     """
     Calculates the cumulative of new cases for the U.S each day
@@ -104,3 +129,22 @@ def get_country_cumulative(data: pd.DataFrame) -> list:
 
     return daily_rates
 
+
+def get_total_daily_change(data: pd.DataFrame, from_csv=False) -> list:
+    """
+    Calculates the change for each day since the time first recorded in the data
+    :param data: a DataFrame containing time series data
+    :return: The change in cases for each day
+    """
+    columns = data.columns.to_list()
+    changes = []
+
+    for index in range(3, len(columns)):
+        if index != len(columns):
+            index = index + 1
+            needed_columns = columns[2:index]
+            changes.append(ct.get_daily_change(data[needed_columns]))
+        else:
+            changes.append(ct.get_daily_change(data))
+
+    return changes

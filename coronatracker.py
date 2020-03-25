@@ -127,9 +127,9 @@ def get_jhu_data() -> pd.DataFrame:
         file.write(csv_data)
 
     temp_frame = pd.read_csv(jhu_path + 'jhu_temp.csv')
-    us_frame = temp_frame[['Province/State', 'Country/Region', 'Confirmed', 'Deaths', 'Recovered']]
-    us_frame.rename(columns={'Province/State': 'case_loc'}, inplace=True)
-    is_US = us_frame['Country/Region'] == 'US'
+    us_frame = temp_frame[['Province_State', 'Country_Region', 'Confirmed', 'Deaths', 'Recovered']]
+    us_frame.rename(columns={'Province_State': 'case_loc'}, inplace=True)
+    is_US = us_frame['Country_Region'] == 'US'
     us_frame = us_frame[is_US]
     us_frame = us_frame[~us_frame['case_loc'].str.contains('Princess')]
 
@@ -169,13 +169,14 @@ def make_state_objects_from_data(data: pd.DataFrame, from_csv=False) -> [State]:
 
     state_objs = []
     state_names = []
+    state_data = make_state_frame(data)
 
-    for name in data['state']:
+    for name in state_data['state']:
         if name not in state_names:
             state_names.append(name)
 
     for name in state_names:
-        for row_tuple in data.iterrows():
+        for row_tuple in state_data.iterrows():
             # Data read in from a CSV has an index column first, so we just have to shift over 1
             if from_csv:
                 row_data = [entry for entry in row_tuple[1]]
@@ -210,17 +211,7 @@ def get_time_series(from_file=False) -> pd.DataFrame:
     else:
         logger.info('Attempting to download JHU time series sheet')
 
-        jhu_github_url = 'https://github.com/CSSEGISandData/COVID-19/tree/master/csse_covid_19_data/csse_covid_19_time_series'
-        github_req = requests.get(jhu_github_url)
-        git_soup = BeautifulSoup(github_req.content, features='html.parser')
-
-        candidate_link = ''
-
-        for link in git_soup.find_all('a'):
-            if link.get('title') == 'time_series_19-covid-Confirmed.csv':
-                candidate_link = link.get('href')
-
-        file_link = str('https://raw.githubusercontent.com' + candidate_link).replace('blob/', '')
+        file_link = 'https://raw.githubusercontent.com/CSSEGISandData/COVID-19/master/csse_covid_19_data/csse_covid_19_time_series/time_series_covid19_confirmed_global.csv'
         newest_csv_req = urllib.request.Request(file_link)
         csv_file = urllib.request.urlopen(newest_csv_req)
         csv_data = csv_file.read()
@@ -231,7 +222,6 @@ def get_time_series(from_file=False) -> pd.DataFrame:
         ts_conf_frame = pd.read_csv(jhu_path + 'jhu_time_temp.csv')
         is_US = ts_conf_frame['Country/Region'] == 'US'
         ts_conf_frame = ts_conf_frame[is_US]
-        ts_conf_frame = ts_conf_frame[~ts_conf_frame['Province/State'].str.contains('Princess')]
 
         ts_conf_frame.drop(['Country/Region', 'Lat', 'Long'], axis=1, inplace=True)
         ts_conf_frame.rename(columns={'Province/State': 'state'}, inplace=True)
@@ -250,7 +240,6 @@ def get_daily_change(time_data: pd.DataFrame) -> int:
     :param time_data: The JHU time series DataFrame
     :return: The difference in cases between the most recent day and the one before it
     """
-
     newest_column_date = time_data.columns.to_list()[-1:]
     prev_column_date = time_data.columns.to_list()[-2:-1]
 
@@ -492,7 +481,7 @@ def make_tweet(topic: str, updates: dict):
     chosen_tags = random.sample(hashtags, k=2)
     text = 'COVID-19 Update: This tracker has found new '
     media_ids = []
-    files = ['state_sum.png', 'rate_plot.png']
+    files = ['state_sum.png', 'rate_plot.png', 'change_plot.png']
     multi_tweet = False
 
     # Formats a tweet with all the updated states' abbreviations
@@ -520,7 +509,7 @@ def make_tweet(topic: str, updates: dict):
     # Formats a tweet with change in cases per day across all the updated states
     elif topic == 'change':
         new_state_len = len(updates['cases'])
-        change = get_daily_change(get_time_series(from_file=True))
+        change = get_daily_change(get_time_series())
 
         text = f'COVID-19 Update: This tracker has found {change} new cases in {new_state_len} ' \
                f'U.S states and territories {chosen_tags[0]} {chosen_tags[1]}'
@@ -639,4 +628,4 @@ def main(first_run=True):
 
 
 if __name__ == '__main__':
-    main()
+   main()
