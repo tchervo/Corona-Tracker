@@ -1,11 +1,16 @@
 # Corona-Tracker
-Tracker for 2019-nCoV in the United States using data from the U.S CDC and John Hopkins University. This software powers a Twitter bot that you can follow [here](https://twitter.com/TrackerCorona)
+Tracker for COVID-19 in the United States using data from the U.S CDC and John Hopkins University. This software powers a Twitter bot that you can follow [here](https://twitter.com/TrackerCorona)
 
 # About
 This software scrapes data from the [U.S Centers for Disease Control and Prevention](https://www.cdc.gov/coronavirus/2019-ncov/cases-in-us.html)
 and [John Hopkins University CSSE](https://github.com/CSSEGISandData/COVID-19)
 and (at present) creates simple visualizations of it. Usage of this software requires a Twitter developer account.
 This is a very early release and new features are currently in development.
+
+# Current Features
+- Automatically checks JHU CSSE's COVID-19 repo for new reports and saves time series and daily total data as a CSV file
+- Automatically generates and formats plots from data and saves plots as .png files
+- Automatically formats and posts tweets with case information with support for generating threaded tweets
 
 # Usage
 This software requires a Twitter Developer Account. To install this software, follow these steps:
@@ -20,7 +25,6 @@ Since this software its dependent on 3rd party data that I have no control over,
 JHU has changed its spreadsheet data several times in a way that breaks this program, and it is possible it can happen again. The same goes for the CDC data.
 
 # In-Development Features
-- Time Series/Rate support
 - Comparisons with other countries
 - Additional statistics and visualizations
 
