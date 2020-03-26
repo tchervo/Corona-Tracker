@@ -307,28 +307,30 @@ def find_case_leader(global_data: pd.DataFrame) -> str:
     return current_leader
 
 
-def get_time_to_leader(global_data: pd.DataFrame):
+def get_time_to_target(global_data: pd.DataFrame, target: int):
     """
-    Tries to find the amount of time in days it will take for the U.S to overtake the current case leader based on
+    Tries to find the amount of time in days it will take for the U.S to arrive at the target number of cases based on
     the mean change in cases over the past five days
+    :param target: The target number of cases
     :param global_data:
     :return:
     """
 
+    # Since the U.S is now the leader in cases, the time to leader mode has been disabled
+    # Slope is calculated from the past five days to prevent skew from earlier time periods
     us_changes = get_total_daily_change(ct.get_time_series())[-5:]
     us_slope = np.mean(us_changes)
-    leader = find_case_leader(global_data)
-    leader_changes = get_total_daily_change(global_data, 'China')[-5:]
-    leader_slope = np.mean(leader_changes)
+    # leader = find_case_leader(global_data)
+    # leader_changes = get_total_daily_change(global_data, 'China')[-5:]
+    # leader_slope = np.mean(leader_changes)
 
     est_us_cases = get_country_cumulative(ct.get_time_series())[-1]
-    est_leader_cases = get_country_cumulative(get_global_time_series(), countries=leader)[-1]
+    # est_leader_cases = get_country_cumulative(get_global_time_series(), countries=leader)[-1]
 
     add_days = 0
 
-    while est_us_cases <= est_leader_cases:
-        add_days += 1
-        est_us_cases += us_slope
-        est_leader_cases += leader_slope
+    while est_us_cases <= target:
+        add_days += 0.1
+        est_us_cases += us_slope * 0.1
 
-    return add_days
+    return round(add_days, 2)

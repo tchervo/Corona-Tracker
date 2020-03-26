@@ -463,11 +463,11 @@ def make_tweet(topic: str, updates: dict):
     """
 
     hashtags = ['#Coronavirus', '#USCoronavirus', '#COVID19', '#USCOVID19', '#CoronaOutbreak', '#CoronaAlert',
-                '#COVID_19', '#CoronaPandemic']
-    chosen_tags = random.sample(hashtags, k=2)
+                '#COVID_19', '#CoronaPandemic', '#CoronavirusOutbreak']
+    chosen_tags = random.sample(hashtags, k=3)
     text = 'COVID-19 Update: This tracker has found new '
     media_ids = []
-    files = ['state_sum.png', 'rate_plot.png', 'change_plot.png']
+    files = ['state_sum.png', 'rate_plot.png', 'change_plot.png', 'comp_plot.png']
     multi_tweet = False
 
     # Formats a tweet with all the updated states' abbreviations
@@ -506,21 +506,21 @@ def make_tweet(topic: str, updates: dict):
         comparison_change = get_daily_change(global_ts, country=comparison_country)
         prev_column_comp = global_ts.columns.to_list()[-2]
         comp_percent_change = round((comparison_change / global_ts[prev_column_comp].sum()) * 100, 4)
-        leader = dp.find_case_leader(global_ts)
-        time_to_leader = dp.get_time_to_leader(global_ts)
+        target = 100000
+        time_to_target = dp.get_time_to_target(global_ts, target)
 
         if percent_change > comp_percent_change:
-            text = f'COVID-19 Update: This tracker has found {change} new cases in {new_state_len} U.S states and territories. ' \
-                   f'A {percent_change}% increase since yesterday which is {round(percent_change - comp_percent_change, 4)}% ' \
+            text = f'COVID-19 Update: This tracker has found {change} new cases in {new_state_len} U.S states and territories, ' \
+                   f'a {percent_change}% increase since yesterday which is {round(percent_change - comp_percent_change, 4)}% ' \
                    f"higher than {comparison_country}'s percent change of {comp_percent_change}%. At its current 5 day " \
-                   f"average rate, the U.S will overtake {leader} as the global leader in cases in {time_to_leader} days." \
-                   f' {chosen_tags[0]} {chosen_tags[1]}'
+                   f"average rate, the U.S will have {target} cases in {time_to_target} days (Estimate)." \
+                   f' {chosen_tags[0]} {chosen_tags[1]} {chosen_tags[2]}'
         else:
-            text = f'COVID-19 Update: This tracker has found {change} new cases in {new_state_len} U.S states and territories. ' \
-                   f'A {percent_change}% increase since yesterday which is {round(percent_change - comp_percent_change, 4)}% ' \
+            text = f'COVID-19 Update: This tracker has found {change} new cases in {new_state_len} U.S states and territories, ' \
+                   f'a {percent_change}% increase since yesterday which is {round(percent_change - comp_percent_change, 4)}% ' \
                    f"lower than {comparison_country}'s percent change of {comp_percent_change}%. At its current 5 day " \
-                   f"average rate, the U.S will overtake {leader} as the global leader in cases in {time_to_leader} days." \
-                   f' {chosen_tags[0]} {chosen_tags[1]}'
+                   f"average rate, the U.S will have {target} cases in {time_to_target} days (Estimate)." \
+                   f' {chosen_tags[0]} {chosen_tags[1]} {chosen_tags[2]}'
     else:
         text = input('Please enter tweet text: ')
 
