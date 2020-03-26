@@ -198,16 +198,45 @@ def make_state_objects_from_data(data: pd.DataFrame, from_csv=False) -> [State]:
     return state_objs
 
 
-def get_time_series(from_file=False) -> pd.DataFrame:
+def get_time_series() -> pd.DataFrame:
     """
     Reads data from the JHU time series sheet from Github. Presently only gathers info on confirmed cases.
-    :param: from_file: SHould the DataFrame be read in from a file? Default is false
     :return: A dataframe of the time series data for the U.S with columns for the location at which is was discovered
     and a column for each day since tracking began.
     """
 
-    if from_file:
-        return pd.read_csv(jhu_path + 'jhu_time.csv')
+    if os.path.exists(jhu_path + 'jhu_time.csv'):
+        data = pd.read_csv(jhu_path + 'jhu_time.csv')
+        newest_date = datetime.strptime(data.columns.to_list()[-1], '%m/%d/%y')
+
+        if newest_date == datetime.now().date():
+            logger.info('Currently downloaded U.S time series is up to date. Reading file...')
+
+            return data
+        else:
+            logger.info('Currently downloaded U.S time series may be out of date! Downloading new one...')
+
+            file_link = 'https://raw.githubusercontent.com/CSSEGISandData/COVID-19/master/csse_covid_19_data/csse_covid_19_time_series/time_series_covid19_confirmed_global.csv'
+            newest_csv_req = urllib.request.Request(file_link)
+            csv_file = urllib.request.urlopen(newest_csv_req)
+            csv_data = csv_file.read()
+
+            with open(jhu_path + 'jhu_time_temp.csv', 'wb') as file:
+                file.write(csv_data)
+
+            ts_conf_frame = pd.read_csv(jhu_path + 'jhu_time_temp.csv')
+            is_US = ts_conf_frame['Country/Region'] == 'US'
+            ts_conf_frame = ts_conf_frame[is_US]
+
+            ts_conf_frame.drop(['Country/Region', 'Lat', 'Long'], axis=1, inplace=True)
+            ts_conf_frame.rename(columns={'Province/State': 'state'}, inplace=True)
+
+            logger.info('Removing JHU temp file...')
+            os.remove(jhu_path + 'jhu_time_temp.csv')
+            ts_conf_frame.to_csv(jhu_path + 'jhu_time.csv')
+            logger.info('Saved time series data successfully!')
+
+            return ts_conf_frame
     else:
         logger.info('Attempting to download JHU time series sheet')
 
@@ -234,19 +263,33 @@ def get_time_series(from_file=False) -> pd.DataFrame:
         return ts_conf_frame
 
 
-def get_daily_change(time_data: pd.DataFrame) -> int:
+def get_daily_change(time_data: pd.DataFrame, country='US') -> int:
     """
-    Calculate the daily change in cases from time series data
+    Calculate the daily change in cases for a country from time series data
+    :param country: The country of interest. Default is U.S
     :param time_data: The JHU time series DataFrame
     :return: The difference in cases between the most recent day and the one before it
     """
-    newest_column_date = time_data.columns.to_list()[-1:]
-    prev_column_date = time_data.columns.to_list()[-2:-1]
 
-    newest_column_sum = time_data[newest_column_date].sum()
-    prev_column_sum = time_data[prev_column_date].sum()
+    if country == 'US':
+        newest_column_date = time_data.columns.to_list()[-1:]
+        prev_column_date = time_data.columns.to_list()[-2:-1]
 
-    return int(newest_column_sum) - int(prev_column_sum)
+        newest_column_sum = time_data[newest_column_date].sum()
+        prev_column_sum = time_data[prev_column_date].sum()
+
+        return int(newest_column_sum) - int(prev_column_sum)
+    else:
+        is_country = time_data['Country/Region'] == country
+        country_data = time_data[is_country]
+
+        newest_column_date = country_data.columns.to_list()[-1:]
+        prev_column_date = country_data.columns.to_list()[-2:-1]
+
+        newest_column_sum = country_data[newest_column_date].sum()
+        prev_column_sum = country_data[prev_column_date].sum()
+
+        return int(newest_column_sum) - int(prev_column_sum)
 
 
 def get_data_for(name: str, var: str, data: pd.DataFrame, region='state') -> pd.Series:
@@ -354,63 +397,6 @@ def is_new_data(recent_data: pd.DataFrame, prev_data: pd.DataFrame, source: str)
         return is_new
 
 
-def get_cdc_data() -> pd.DataFrame:
-    """
-    Scans the web page at the URL listed below for a table containing test result status for the United States
-    :return: A dataframe with the columns measure and counts
-    """
-
-    cdc_url = 'https://www.cdc.gov/coronavirus/2019-ncov/cases-in-us.html'
-    cdc_page = requests.get(cdc_url)
-    cdc_soup = BeautifulSoup(cdc_page.content, features='html.parser')
-
-    measures = []
-    values = []
-
-    # Selects for the first table
-    table = cdc_soup.find_all('table')[0]
-    rows = table.find_all('tr')
-
-    for entry in rows:
-        entry_dat = entry.find_all('td')
-        # For whatever reason, the last two rows in the table have their data entered in a different way than the others
-        # This fixes that
-        final_measure_entries = entry.find('th')
-
-        for table_data in entry_dat:
-            try:
-                values.append(int(table_data.get_text()))
-            except ValueError:
-                # Shortens the name of some measures to get them to fit on a figure
-                if 'Case' in table_data.get_text():
-                    measures.append('Confirmed Cases')
-                elif 'Person' in table_data.get_text():
-                    measures.append('Person-to-Person')
-                else:
-                    measures.append(table_data.get_text())
-        if final_measure_entries is not None:
-            measures.append(final_measure_entries.get_text())
-
-    data = {'measure': measures, 'counts': values}
-    frame = pd.DataFrame(data)
-
-    if frame.empty is not True:
-        logger.info('Successfully downloaded CDC data! If new will save as cdc_{}'.format(now_file_ext))
-
-    newest_data = get_most_recent_data('cdc')
-
-    if is_new_data(frame, newest_data, 'cdc'):
-        print('Found new CDC data! Saving...')
-        logger.info('Found new CDC data! Now saving...')
-        frame.to_csv(cdc_path + 'cdc_' + now_file_ext)
-        global should_tweet
-        should_tweet = True
-    else:
-        logger.warning('Downloaded data is not new! Will not save')
-
-    return frame
-
-
 def load_all_data(data_type: str) -> []:
     """
     Loads all of the data from a directory of a given type. (Ex. All the data from the CDC directory
@@ -425,7 +411,7 @@ def load_all_data(data_type: str) -> []:
                 data.append(file)
     if data_type.lower() == 'jhu':
         for file in os.listdir(jhu_path):
-            if file != '.DS_Store' and file != 'jhu_time.csv':
+            if file != '.DS_Store' and file != 'jhu_time.csv' and file != 'jhu_global_time.csv':
                 data.append(file)
 
     return data
@@ -476,8 +462,8 @@ def make_tweet(topic: str, updates: dict):
     :param topic: The data topic to tweet about. Either jhu, cdc, or 'both'
     """
 
-    hashtags = ['#nCoV', '#Coronavirus', '#USCoronavirus', '#COVID19', '#USCOVID19', '#CoronaOutbreak',
-                '#CoronaAlert', '#COVID_19', '#CoronaPandemic']
+    hashtags = ['#Coronavirus', '#USCoronavirus', '#COVID19', '#USCOVID19', '#CoronaOutbreak', '#CoronaAlert',
+                '#COVID_19', '#CoronaPandemic']
     chosen_tags = random.sample(hashtags, k=2)
     text = 'COVID-19 Update: This tracker has found new '
     media_ids = []
@@ -508,11 +494,33 @@ def make_tweet(topic: str, updates: dict):
 
     # Formats a tweet with change in cases per day across all the updated states
     elif topic == 'change':
+        ts_data = get_time_series()
+        global_ts = dp.get_global_time_series()
         new_state_len = len(updates['cases'])
-        change = get_daily_change(get_time_series())
+        change = get_daily_change(ts_data)
+        prev_column = ts_data.columns.to_list()[-2]
+        percent_change = round((change / ts_data[prev_column].sum()) * 100, 4)
 
-        text = f'COVID-19 Update: This tracker has found {change} new cases in {new_state_len} ' \
-               f'U.S states and territories {chosen_tags[0]} {chosen_tags[1]}'
+        # Mostly arbitrary
+        comparison_country = random.choice(['Italy', 'Spain', 'Germany', 'Canada', 'United Kingdom'])
+        comparison_change = get_daily_change(global_ts, country=comparison_country)
+        prev_column_comp = global_ts.columns.to_list()[-2]
+        comp_percent_change = round((comparison_change / global_ts[prev_column_comp].sum()) * 100, 4)
+        leader = dp.find_case_leader(global_ts)
+        time_to_leader = dp.get_time_to_leader(global_ts)
+
+        if percent_change > comp_percent_change:
+            text = f'COVID-19 Update: This tracker has found {change} new cases in {new_state_len} U.S states and territories. ' \
+                   f'A {percent_change}% increase since yesterday which is {round(percent_change - comp_percent_change, 4)}% ' \
+                   f"higher than {comparison_country}'s percent change of {comp_percent_change}%. At its current 5 day " \
+                   f"average rate, the U.S will overtake {leader} as the global leader in cases in {time_to_leader} days." \
+                   f' {chosen_tags[0]} {chosen_tags[1]}'
+        else:
+            text = f'COVID-19 Update: This tracker has found {change} new cases in {new_state_len} U.S states and territories. ' \
+                   f'A {percent_change}% increase since yesterday which is {round(percent_change - comp_percent_change, 4)}% ' \
+                   f"lower than {comparison_country}'s percent change of {comp_percent_change}%. At its current 5 day " \
+                   f"average rate, the U.S will overtake {leader} as the global leader in cases in {time_to_leader} days." \
+                   f' {chosen_tags[0]} {chosen_tags[1]}'
     else:
         text = input('Please enter tweet text: ')
 
@@ -605,7 +613,7 @@ def main(first_run=True):
 
     us_frame = get_jhu_data()
 
-    dp.make_plots([us_frame, get_time_series()])
+    dp.make_plots([us_frame, get_time_series(), dp.get_global_time_series()])
 
     if should_tweet:
         # File saving had to be moved down here or else the tweet formatter would not be able to detect new data
@@ -628,4 +636,4 @@ def main(first_run=True):
 
 
 if __name__ == '__main__':
-   main()
+    main()
