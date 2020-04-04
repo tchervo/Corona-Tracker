@@ -158,6 +158,22 @@ def make_comparison_plot(cumulative_cases: list):
     plt.close()
 
 
+# Needs some improvements to polynomial fitting - Temporarily disabled
+# def make_acceleration_plot():
+#     changes = get_total_daily_change(ct.get_time_series())[50:]
+#     x_vals = np.arange(start=1, stop=len(changes) + 1)
+#     coeff = np.polyfit(x=x_vals, y=changes, deg=2)[0]
+#     change_rate = [(2 * coeff) * x for x in x_vals]
+#     fitted = [coeff * (x ** 2) for x in x_vals]
+#
+#     plt.plot(x_vals, change_rate, color='red')
+#     plt.plot(x_vals, fitted, color='green')
+#     plt.plot(x_vals, changes, color='blue')
+#
+#     plt.show()
+#     plt.close()
+
+
 def get_country_cumulative(data: pd.DataFrame, countries='US') -> list:
     """
     Calculates the cumulative of new cases for the U.S or a selected group of countries each day
@@ -198,19 +214,20 @@ def get_country_cumulative(data: pd.DataFrame, countries='US') -> list:
 
 def get_total_daily_change(data: pd.DataFrame, country='US') -> list:
     """
-    Calculates the change for each day since the time first recorded in the data
+    Calculates the change in either cases or deaths for each day since the time first recorded in the data
     :param country: The country to get the changes for. Default is US
     :param data: a DataFrame containing time series data
     :return: The change in cases for each day
     """
     if country == 'US':
-        columns = data.columns.to_list()
+        # Select columns with dates
+        columns = [column for column in data.columns.to_list() if '/20' in column]
         changes = []
 
-        for index in range(3, len(columns)):
+        for index in range(0, len(columns)):
             if index != len(columns):
                 index = index + 1
-                needed_columns = columns[2:index]
+                needed_columns = columns[:index]
                 changes.append(ct.get_daily_change(data[needed_columns]))
             else:
                 changes.append(ct.get_daily_change(data))
@@ -218,7 +235,8 @@ def get_total_daily_change(data: pd.DataFrame, country='US') -> list:
         return changes
     else:
         country_data = data[data['Country/Region'] == country]
-        columns = country_data.columns.to_list()
+        columns = [column for column in country_data.columns.to_list() if '/20' in column]
+        changes = []
         changes = []
 
         for index in range(3, len(columns)):
@@ -264,7 +282,7 @@ def get_global_time_series() -> pd.DataFrame:
 
             return global_frame
 
-    ct.logger.info('Trying to download global time series data...')
+    ct.logger.info('Global time series data may be out of date! Trying to download new file...')
     file_link = 'https://raw.githubusercontent.com/CSSEGISandData/COVID-19/master/csse_covid_19_data/csse_covid_19_time_series/time_series_covid19_confirmed_global.csv'
 
     newest_csv_req = urllib.request.Request(file_link)
@@ -285,9 +303,86 @@ def get_global_time_series() -> pd.DataFrame:
     return global_frame
 
 
-def find_case_leader(global_data: pd.DataFrame) -> str:
+def get_death_time_series(country='all') -> pd.DataFrame:
+    """
+    Downloads the global deaths time series. Can return for a specific country or all countries
+    :param: country: Either 'all' for all countries or a specific country's name. Default is all.
+    :return: A DataFrame containing the death time series for a given country or all countries
+    """
+    
+    if country == 'US':
+        file_path = ct.jhu_path + 'jhu_death_time_us.csv'
+        file_link = 'https://raw.githubusercontent.com/CSSEGISandData/COVID-19/master/csse_covid_19_data/csse_covid_19_time_series/time_series_covid19_deaths_US.csv'
+        drop_list = ['UID', 'iso2', 'iso3', 'code3', 'FIPS', 'Lat', 'Long_', 'Combined_Key', 'Population']
+    else:
+        file_path = ct.jhu_path + 'jhu_death_time_global.csv'
+        file_link = 'https://raw.githubusercontent.com/CSSEGISandData/COVID-19/master/csse_covid_19_data/csse_covid_19_time_series/time_series_covid19_deaths_global.csv'
+        drop_list = ['Lat', 'Long']
+        
+    if os.path.exists(file_path):
+        data = pd.read_csv(file_path)
+        newest_date = datetime.strptime(data.columns.to_list()[-1], '%m/%d/%y')
+
+        if newest_date == datetime.now().date():
+            ct.logger.info('Currently downloaded global death time series is up to date. Reading file...')
+
+            return data
+        else:
+            ct.logger.info('Global death time series data may be out of date! Trying to download new file...')
+
+            newest_csv_req = urllib.request.Request(file_link)
+            csv_file = urllib.request.urlopen(newest_csv_req)
+            csv_data = csv_file.read()
+
+            with open(ct.jhu_path + 'jhu_time_temp.csv', 'wb') as file:
+                file.write(csv_data)
+
+            death_frame = pd.read_csv(ct.jhu_path + 'jhu_time_temp.csv')
+
+            death_frame.drop(columns=drop_list, inplace=True)
+            death_frame.to_csv(file_path)
+            os.remove(ct.jhu_path + 'jhu_time_temp.csv')
+
+            ct.logger.info('Succesfully downloaded death time series data!')
+
+            if country == 'all':
+                return death_frame
+            elif country == 'US':
+                death_frame.rename(columns={'Admin2': 'City_County'}, inplace=True)
+                return death_frame
+            else:
+                return death_frame[death_frame['Country_Region'] == country]
+
+    ct.logger.info('Global death time series data may be out of date! Trying to download new file...')
+
+    newest_csv_req = urllib.request.Request(file_link)
+    csv_file = urllib.request.urlopen(newest_csv_req)
+    csv_data = csv_file.read()
+
+    with open(ct.jhu_path + 'jhu_time_temp.csv', 'wb') as file:
+        file.write(csv_data)
+
+    death_frame = pd.read_csv(ct.jhu_path + 'jhu_time_temp.csv')
+
+    death_frame.drop(columns=drop_list, inplace=True)
+    death_frame.to_csv(file_path)
+    os.remove(ct.jhu_path + 'jhu_time_temp.csv')
+
+    ct.logger.info('Succesfully downloaded death time series data!')
+
+    if country == 'all':
+        return death_frame
+    elif country == 'US':
+        death_frame.rename(columns={'Admin2': 'City_County'}, inplace=True)
+        return death_frame
+    else:
+        return death_frame[death_frame['Country_Region'] == country]
+
+
+def find_case_leader(global_data: pd.DataFrame, inc_US=False) -> str:
     """
     Finds the country with the largest amount of cases
+    :param inc_US: Should the U.S be included as a potential leader? Default is no due to the U.S' current position
     :param global_data: Global time series data
     :return: The name of the leading country
     """
@@ -296,13 +391,16 @@ def find_case_leader(global_data: pd.DataFrame) -> str:
     leader_cases = 0
 
     for country in global_data['Country/Region']:
-        country_data = global_data[global_data['Country/Region'] == country]
-        last_column_name = country_data.columns.to_list()[-1]
-        total_cases = country_data[last_column_name].sum()
+        if country == 'US' and inc_US is False:
+            pass
+        else:
+            country_data = global_data[global_data['Country/Region'] == country]
+            last_column_name = country_data.columns.to_list()[-1]
+            total_cases = country_data[last_column_name].sum()
 
-        if total_cases > leader_cases:
-            current_leader = country
-            leader_cases = total_cases
+            if total_cases > leader_cases:
+                current_leader = country
+                leader_cases = total_cases
 
     return current_leader
 
@@ -318,7 +416,7 @@ def get_time_to_target(global_data: pd.DataFrame, target: int):
 
     # Since the U.S is now the leader in cases, the time to leader mode has been disabled
     # Slope is calculated from the past five days to prevent skew from earlier time periods
-    us_changes = get_total_daily_change(ct.get_time_series())[-5:]
+    us_changes = get_total_daily_change(ct.get_time_series())[-3:]
     us_slope = np.mean(us_changes)
     # leader = find_case_leader(global_data)
     # leader_changes = get_total_daily_change(global_data, 'China')[-5:]

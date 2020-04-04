@@ -263,33 +263,40 @@ def get_time_series() -> pd.DataFrame:
         return ts_conf_frame
 
 
-def get_daily_change(time_data: pd.DataFrame, country='US') -> int:
+def get_daily_change(time_data: pd.DataFrame, country='default', change_type='cases') -> int:
     """
     Calculate the daily change in cases for a country from time series data
-    :param country: The country of interest. Default is U.S
+    :param change_type: What type of changes should be calculated. Default is cases. Valid types are cases and deaths
+    :param country: The country of interest. Valid inputs are default (Assumes that the provided data only comes from a
+    single country) or the name of a country
     :param time_data: The JHU time series DataFrame
     :return: The difference in cases between the most recent day and the one before it
     """
 
-    if country == 'US':
-        newest_column_date = time_data.columns.to_list()[-1:]
-        prev_column_date = time_data.columns.to_list()[-2:-1]
-
-        newest_column_sum = time_data[newest_column_date].sum()
-        prev_column_sum = time_data[prev_column_date].sum()
-
-        return int(newest_column_sum) - int(prev_column_sum)
-    else:
+    # Select for columns for a /20 as those contain dates
+    if country != 'default':
         is_country = time_data['Country/Region'] == country
         country_data = time_data[is_country]
+        valid_columns = [column for column in country_data.columns.to_list() if '/20' in column]
+        valid_data = country_data[valid_columns]
+    else:
+        valid_columns = [column for column in time_data.columns.to_list() if '/20' in column]
+        valid_data = time_data[valid_columns]
 
-        newest_column_date = country_data.columns.to_list()[-1:]
-        prev_column_date = country_data.columns.to_list()[-2:-1]
+    newest_column_date = valid_data.columns.to_list()[-1:]
+    prev_column_date = valid_data.columns.to_list()[-2:-1]
 
-        newest_column_sum = country_data[newest_column_date].sum()
-        prev_column_sum = country_data[prev_column_date].sum()
+    newest_column_sum = valid_data[newest_column_date].sum()
+    prev_column_sum = valid_data[prev_column_date].sum()
 
-        return int(newest_column_sum) - int(prev_column_sum)
+    # Since there is no data behind the first date, default to 0
+    try:
+        int(prev_column_sum)
+    except TypeError:
+        prev_column_sum = 0
+
+    return int(newest_column_sum) - int(prev_column_sum)
+
 
 
 def get_data_for(name: str, var: str, data: pd.DataFrame, region='state') -> pd.Series:
@@ -411,7 +418,7 @@ def load_all_data(data_type: str) -> []:
                 data.append(file)
     if data_type.lower() == 'jhu':
         for file in os.listdir(jhu_path):
-            if file != '.DS_Store' and file != 'jhu_time.csv' and file != 'jhu_global_time.csv':
+            if file != '.DS_Store' and 'time' not in file:
                 data.append(file)
 
     return data
@@ -499,34 +506,34 @@ def make_tweet(topic: str, updates: dict):
         new_state_len = len(updates['cases'])
         change = get_daily_change(ts_data)
         prev_column = ts_data.columns.to_list()[-2]
-        percent_change = round((change / ts_data[prev_column].sum()) * 100, 4)
+        percent_change = round((change / ts_data[prev_column].sum()) * 100, 2)
 
-        # Mostly arbitrary
-        comparison_country = random.choice(['Italy', 'Spain', 'Germany', 'Canada', 'United Kingdom'])
-        comparison_change = get_daily_change(global_ts, country=comparison_country)
-        prev_column_comp = global_ts.columns.to_list()[-2]
-        comp_percent_change = round((comparison_change / global_ts[prev_column_comp].sum()) * 100, 4)
-        target = 100000
+        us_death_ts = dp.get_death_time_series('US')
+        death_prev_col = us_death_ts.columns.to_list()[-1]
+        death_change = get_daily_change(us_death_ts)
+        percent_death_change = round((death_change / us_death_ts[death_prev_col].sum()) * 100, 2)
+
+        # By default does not include the U.S. Temporarily disabled
+        # comparison_country = dp.find_case_leader(global_ts)
+        # comparison_change = get_daily_change(global_ts, country=comparison_country)
+        prev_column_comp = global_ts.columns.to_list()[-1]
+        us_global_share = round((dp.get_country_cumulative(ts_data)[-1] / global_ts[prev_column_comp].sum()) * 100, 2)
+        target = 300000
+
         time_to_target = dp.get_time_to_target(global_ts, target)
 
-        if percent_change > comp_percent_change:
-            text = f'COVID-19 Update: This tracker has found {change} new cases in {new_state_len} U.S states and territories, ' \
-                   f'a {percent_change}% increase since yesterday which is {round(percent_change - comp_percent_change, 4)}% ' \
-                   f"higher than {comparison_country}'s percent change of {comp_percent_change}%. At its current 5 day " \
-                   f"average rate, the U.S will have {target} cases in {time_to_target} days (Estimate)." \
-                   f' {chosen_tags[0]} {chosen_tags[1]} {chosen_tags[2]}'
-        else:
-            text = f'COVID-19 Update: This tracker has found {change} new cases in {new_state_len} U.S states and territories, ' \
-                   f'a {percent_change}% increase since yesterday which is {round(percent_change - comp_percent_change, 4)}% ' \
-                   f"lower than {comparison_country}'s percent change of {comp_percent_change}%. At its current 5 day " \
-                   f"average rate, the U.S will have {target} cases in {time_to_target} days (Estimate)." \
-                   f' {chosen_tags[0]} {chosen_tags[1]} {chosen_tags[2]}'
+        text = f'COVID-19 Update: This tracker has found {change:,} new cases and {death_change:,} new deaths, ' \
+               f'a {percent_change}% increase in cases and {percent_death_change}% increase in deaths since yesterday. ' \
+               f"At its 3-day average rate, the U.S will have {target:,} cases in {time_to_target} days (Estimate). " \
+               f' {chosen_tags[0]} {chosen_tags[1]} {chosen_tags[2]}'
+
     else:
         text = input('Please enter tweet text: ')
 
     if len(text) > 280:
-        text1 = text[:280]
-        text2 = text[280:]
+        hastag_text = f' {chosen_tags[0]} {chosen_tags[1]} {chosen_tags[2]}'
+        text1 = text.replace(hastag_text, '')[:280]
+        text2 = text.replace(hastag_text, '')[280:]
         multi_tweet = True
 
     print(text)
@@ -540,7 +547,7 @@ def make_tweet(topic: str, updates: dict):
 
     if multi_tweet:
         lead_tweet = api.update_status(status=text1, media_ids=media_ids)
-        api.update_status(status=text2, in_reply_to_status_id=lead_tweet.id)
+        api.update_status(status=hastag_text, in_reply_to_status_id=lead_tweet.id)
     else:
         api.update_status(status=text, media_ids=media_ids)
 
