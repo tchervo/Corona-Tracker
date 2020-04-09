@@ -473,9 +473,10 @@ def make_tweet(topic: str, updates: dict):
                 '#COVID_19', '#CoronaPandemic', '#CoronavirusOutbreak']
     chosen_tags = random.sample(hashtags, k=3)
     text = 'COVID-19 Update: This tracker has found new '
-    media_ids = []
-    files = ['state_sum.png', 'rate_plot.png', 'change_plot.png', 'comp_plot.png']
-    multi_tweet = False
+    lead_media_ids = []
+    follow_media_ids = []
+    lead_files = ['capita_plot.png', 'rate_plot.png', 'death_comp_plot.png', 'comp_plot.png']
+    follow_files = ['change_plot.png', 'state_sum.png']
 
     # Formats a tweet with all the updated states' abbreviations
     if topic == 'names':
@@ -503,7 +504,6 @@ def make_tweet(topic: str, updates: dict):
     elif topic == 'change':
         ts_data = get_time_series()
         global_ts = dp.get_global_time_series()
-        new_state_len = len(updates['cases'])
         change = get_daily_change(ts_data)
         prev_column = ts_data.columns.to_list()[-2]
         percent_change = round((change / ts_data[prev_column].sum()) * 100, 2)
@@ -513,43 +513,47 @@ def make_tweet(topic: str, updates: dict):
         death_change = get_daily_change(us_death_ts)
         percent_death_change = round((death_change / us_death_ts[death_prev_col].sum()) * 100, 2)
 
-        # By default does not include the U.S. Temporarily disabled
-        # comparison_country = dp.find_case_leader(global_ts)
-        # comparison_change = get_daily_change(global_ts, country=comparison_country)
         prev_column_comp = global_ts.columns.to_list()[-1]
         us_global_share = round((dp.get_country_cumulative(ts_data)[-1] / global_ts[prev_column_comp].sum()) * 100, 2)
-        target = 300000
+        target = 500000
 
-        time_to_target = dp.get_time_to_target(global_ts, target)
+        time_to_target = dp.get_time_to_target(target)
+
+        death_comparison_country = dp.find_metric_leader(dp.get_death_time_series())
+        death_comp_time = dp.get_time_to_target(metric_type='deaths')
 
         text = f'COVID-19 Update: This tracker has found {change:,} new cases and {death_change:,} new deaths, ' \
                f'a {percent_change}% increase in cases and {percent_death_change}% increase in deaths since yesterday. ' \
-               f"At its 3-day average rate, the U.S will have {target:,} cases in {time_to_target} days (Estimate). " \
-               f' {chosen_tags[0]} {chosen_tags[1]} {chosen_tags[2]}'
+               f"At both country's 3-day average death rate, the U.S will overtake {death_comparison_country} " \
+               f"as the leader in global deaths in {death_comp_time} days."
+
+        follow_text = f"The U.S currently has {us_global_share}% of the world's cases. At its 3-day average rate, " \
+                      f"the U.S will have {target:,} cases in {time_to_target} days (Estimate)." \
+                      f" {chosen_tags[0]} {chosen_tags[1]} {chosen_tags[2]}"
 
     else:
         text = input('Please enter tweet text: ')
 
-    if len(text) > 280:
-        hastag_text = f' {chosen_tags[0]} {chosen_tags[1]} {chosen_tags[2]}'
-        text1 = text.replace(hastag_text, '')[:280]
-        text2 = text.replace(hastag_text, '')[280:]
-        multi_tweet = True
+    multi_tweet = True
 
     print(text)
+    print(follow_text)
 
-    for file in files:
+    for file in lead_files:
         response = api.media_upload(plot_path + file)
-        media_ids.append(response.media_id)
+        lead_media_ids.append(response.media_id)
+    for file in follow_files:
+        response = api.media_upload(plot_path + file)
+        follow_media_ids.append(response.media_id)
 
     print('Sending tweet!')
     logger.info('Found new data! Sending tweet!')
 
     if multi_tweet:
-        lead_tweet = api.update_status(status=text1, media_ids=media_ids)
-        api.update_status(status=hastag_text, in_reply_to_status_id=lead_tweet.id)
+        lead_tweet = api.update_status(status=text, media_ids=lead_media_ids)
+        api.update_status(status=follow_text, in_reply_to_status_id=lead_tweet.id, media_ids=follow_media_ids)
     else:
-        api.update_status(status=text, media_ids=media_ids)
+        api.update_status(status=text, media_ids=lead_media_ids)
 
 
 def get_updated_states(new_data: pd.DataFrame, old_data: pd.DataFrame, old_from_csv=True) -> dict:

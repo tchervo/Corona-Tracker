@@ -38,7 +38,7 @@ def make_plots(data: [pd.DataFrame]):
     state_frame = state_frame.iloc[np.arange(0, 26), [0, 1, 2, 3]]
 
     pos = np.arange(len(state_frame['state']))
-    width = 0.7
+    width = 0.9
     # Interval is [Start, Stop) so we need to go one more
     plt.gcf().set_size_inches(14, 14)
 
@@ -75,6 +75,10 @@ def make_plots(data: [pd.DataFrame]):
                                                                       'Canada', 'United Kingdom', 'China'])
 
     make_comparison_plot(cumulative_cases)
+
+    make_state_death_plot()
+
+    make_per_capita_plot()
 
     ct.logger.info('Created plots!')
 
@@ -159,19 +163,20 @@ def make_comparison_plot(cumulative_cases: list):
 
 
 # Needs some improvements to polynomial fitting - Temporarily disabled
-# def make_acceleration_plot():
-#     changes = get_total_daily_change(ct.get_time_series())[50:]
-#     x_vals = np.arange(start=1, stop=len(changes) + 1)
-#     coeff = np.polyfit(x=x_vals, y=changes, deg=2)[0]
-#     change_rate = [(2 * coeff) * x for x in x_vals]
-#     fitted = [coeff * (x ** 2) for x in x_vals]
-#
-#     plt.plot(x_vals, change_rate, color='red')
-#     plt.plot(x_vals, fitted, color='green')
-#     plt.plot(x_vals, changes, color='blue')
-#
-#     plt.show()
-#     plt.close()
+def make_acceleration_plot():
+    changes = get_total_daily_change(ct.get_time_series())[50:]
+    x_vals = np.arange(start=1, stop=len(changes) + 1)
+    coeff = np.polynomial.polynomial.polyfit(x=x_vals, y=changes, deg=2)
+    print(coeff)
+    change_rate = [((2 * coeff[2]) * x) + coeff[1] for x in x_vals]
+    fitted = [(coeff[2] * (x ** 2) + (coeff[1] * x)) + coeff[0] for x in x_vals]
+
+    plt.plot(x_vals, change_rate, color='red')
+    # plt.plot(x_vals, fitted, color='green')
+    # plt.plot(x_vals, changes, color='blue')
+
+    plt.show()
+    plt.close()
 
 
 def get_country_cumulative(data: pd.DataFrame, countries='US') -> list:
@@ -183,7 +188,7 @@ def get_country_cumulative(data: pd.DataFrame, countries='US') -> list:
     """
 
     if countries == 'US':
-        rates = [data[column].tolist() for column in data.columns if column != 'state' and column != 'city']
+        rates = [data[column].tolist() for column in data.columns if '/20' in column]
         daily_rates = [np.sum(day_rate) for day_rate in rates]
 
         return daily_rates
@@ -191,22 +196,20 @@ def get_country_cumulative(data: pd.DataFrame, countries='US') -> list:
         cumulative_cases = []
 
         for country in countries:
-            is_country = data['Country/Region'] == country
+            is_country = data['Country_Region'] == country
             country_frame = data[is_country]
 
-            rates = [country_frame[column].tolist() for column in country_frame.columns if column != 'Province/State'
-                     and column != 'Country/Region']
+            rates = [country_frame[column].tolist() for column in country_frame.columns if '/20' in column]
             daily_rates = [np.sum(day_rate) for day_rate in rates]
 
             cumulative_cases.append(daily_rates)
 
         return cumulative_cases
     else:
-        is_country = data['Country/Region'] == countries
+        is_country = data['Country_Region'] == countries
         country_frame = data[is_country]
 
-        rates = [country_frame[column].tolist() for column in country_frame.columns if column != 'Province/State'
-                 and column != 'Country/Region']
+        rates = [country_frame[column].tolist() for column in country_frame.columns if '/20' in column]
         daily_rates = [np.sum(day_rate) for day_rate in rates]
 
         return daily_rates
@@ -234,7 +237,7 @@ def get_total_daily_change(data: pd.DataFrame, country='US') -> list:
 
         return changes
     else:
-        country_data = data[data['Country/Region'] == country]
+        country_data = data[data['Country_Region'] == country]
         columns = [column for column in country_data.columns.to_list() if '/20' in column]
         changes = []
         changes = []
@@ -275,6 +278,8 @@ def get_global_time_series() -> pd.DataFrame:
             global_frame = pd.read_csv(ct.jhu_path + 'jhu_global_time_temp.csv')
 
             global_frame.drop(columns=['Lat', 'Long'], inplace=True)
+            global_frame.rename(columns={'Province/State': 'Province_State', 'Country/Region': 'Country_Region'},
+                                inplace=True)
             global_frame.to_csv(ct.jhu_path + 'jhu_global_time.csv')
             os.remove(ct.jhu_path + 'jhu_global_time_temp.csv')
 
@@ -309,16 +314,16 @@ def get_death_time_series(country='all') -> pd.DataFrame:
     :param: country: Either 'all' for all countries or a specific country's name. Default is all.
     :return: A DataFrame containing the death time series for a given country or all countries
     """
-    
+
     if country == 'US':
         file_path = ct.jhu_path + 'jhu_death_time_us.csv'
         file_link = 'https://raw.githubusercontent.com/CSSEGISandData/COVID-19/master/csse_covid_19_data/csse_covid_19_time_series/time_series_covid19_deaths_US.csv'
-        drop_list = ['UID', 'iso2', 'iso3', 'code3', 'FIPS', 'Lat', 'Long_', 'Combined_Key', 'Population']
+        drop_list = ['UID', 'iso2', 'iso3', 'code3', 'FIPS', 'Lat', 'Long_', 'Combined_Key']
     else:
         file_path = ct.jhu_path + 'jhu_death_time_global.csv'
         file_link = 'https://raw.githubusercontent.com/CSSEGISandData/COVID-19/master/csse_covid_19_data/csse_covid_19_time_series/time_series_covid19_deaths_global.csv'
         drop_list = ['Lat', 'Long']
-        
+
     if os.path.exists(file_path):
         data = pd.read_csv(file_path)
         newest_date = datetime.strptime(data.columns.to_list()[-1], '%m/%d/%y')
@@ -345,12 +350,17 @@ def get_death_time_series(country='all') -> pd.DataFrame:
 
             ct.logger.info('Succesfully downloaded death time series data!')
 
+            # JHU has some inconsistencies in column naming, so here we patch them up
             if country == 'all':
+                death_frame.rename(columns={'Province/State': 'Province_State', 'Country/Region':
+                    'Country_Region'}, inplace=True)
                 return death_frame
             elif country == 'US':
                 death_frame.rename(columns={'Admin2': 'City_County'}, inplace=True)
                 return death_frame
             else:
+                death_frame.rename(columns={'Province/State': 'Province_State', 'Country/Region':
+                    'Country_Region'}, inplace=True)
                 return death_frame[death_frame['Country_Region'] == country]
 
     ct.logger.info('Global death time series data may be out of date! Trying to download new file...')
@@ -379,9 +389,9 @@ def get_death_time_series(country='all') -> pd.DataFrame:
         return death_frame[death_frame['Country_Region'] == country]
 
 
-def find_case_leader(global_data: pd.DataFrame, inc_US=False) -> str:
+def find_metric_leader(global_data: pd.DataFrame, inc_US=False) -> str:
     """
-    Finds the country with the largest amount of cases
+    Finds the country with the largest amount of cases or deaths, depending on the type of data provided
     :param inc_US: Should the U.S be included as a potential leader? Default is no due to the U.S' current position
     :param global_data: Global time series data
     :return: The name of the leading country
@@ -390,11 +400,11 @@ def find_case_leader(global_data: pd.DataFrame, inc_US=False) -> str:
     current_leader = 'NO COUNTRY FOUND'
     leader_cases = 0
 
-    for country in global_data['Country/Region']:
+    for country in global_data['Country_Region']:
         if country == 'US' and inc_US is False:
             pass
         else:
-            country_data = global_data[global_data['Country/Region'] == country]
+            country_data = global_data[global_data['Country_Region'] == country]
             last_column_name = country_data.columns.to_list()[-1]
             total_cases = country_data[last_column_name].sum()
 
@@ -405,30 +415,179 @@ def find_case_leader(global_data: pd.DataFrame, inc_US=False) -> str:
     return current_leader
 
 
-def get_time_to_target(global_data: pd.DataFrame, target: int):
+def get_time_to_target(target=-1, metric_type='cases'):
     """
     Tries to find the amount of time in days it will take for the U.S to arrive at the target number of cases based on
     the mean change in cases over the past five days
-    :param target: The target number of cases
-    :param global_data:
+    :param metric_type: The target type. Either cases or deaths
+    :param target: The target number of cases if using cases.
     :return:
     """
 
-    # Since the U.S is now the leader in cases, the time to leader mode has been disabled
-    # Slope is calculated from the past five days to prevent skew from earlier time periods
-    us_changes = get_total_daily_change(ct.get_time_series())[-3:]
-    us_slope = np.mean(us_changes)
-    # leader = find_case_leader(global_data)
-    # leader_changes = get_total_daily_change(global_data, 'China')[-5:]
-    # leader_slope = np.mean(leader_changes)
+    if metric_type == 'cases':
+        if target == -1:
+            raise ValueError('Must specify a target if type is set to cases!')
 
-    est_us_cases = get_country_cumulative(ct.get_time_series())[-1]
-    # est_leader_cases = get_country_cumulative(get_global_time_series(), countries=leader)[-1]
+        # Since the U.S is now the leader in cases, the time to leader mode for cases has been disabled
+        # Slope is calculated from the past three days to prevent skew from earlier time periods
+        us_changes = get_total_daily_change(ct.get_time_series())[-3:]
+        us_slope = np.mean(us_changes)
+        # leader = find_case_leader(global_data)
+        # leader_changes = get_total_daily_change(global_data, 'China')[-5:]
+        # leader_slope = np.mean(leader_changes)
 
-    add_days = 0
+        est_us_cases = get_country_cumulative(ct.get_time_series())[-1]
+        # est_leader_cases = get_country_cumulative(get_global_time_series(), countries=leader)[-1]
 
-    while est_us_cases <= target:
-        add_days += 0.1
-        est_us_cases += us_slope * 0.1
+        add_days = 0
 
-    return round(add_days, 2)
+        while est_us_cases <= target:
+            add_days += 0.1
+            est_us_cases += us_slope * 0.1
+
+        return round(add_days, 2)
+    if metric_type == 'deaths':
+        # Slope is calculated from the past three days to prevent skew from earlier time periods
+        us_changes = get_total_daily_change(get_death_time_series('US'))[-3:]
+        us_slope = np.mean(us_changes)
+        leader = find_metric_leader(get_death_time_series())
+        leader_changes = get_total_daily_change(get_death_time_series(country=leader), leader)[-3:]
+        leader_slope = np.mean(leader_changes)
+
+        est_us_deaths = get_country_cumulative(get_death_time_series('US'))[-1]
+        est_leader_deaths = get_country_cumulative(get_death_time_series(leader), countries=leader)[-1]
+
+        add_days = 0
+
+        if leader_slope > us_slope:
+            return -1
+        else:
+            while est_us_deaths <= est_leader_deaths:
+                add_days += 0.1
+                est_us_deaths += us_slope * 0.1
+                est_leader_deaths += leader_slope * 0.1
+
+            return round(add_days, 2)
+
+
+def get_top_states_by_metric(metric: str, size: int) -> [str]:
+    """
+    Gets the top number of states by a certain metric, either cases or deaths
+    :param metric: Either cases or deaths
+    :param size: The number of entries to return
+    :return: A list of size 'size' containing the top states for that metric
+    """
+
+    if metric == 'cases':
+        data = ct.get_time_series()
+    elif metric == 'deaths':
+        data = get_death_time_series('US')
+    else:
+        raise ValueError("'metric' must be either 'cases' or 'deaths'!")
+
+    most_recent_column = data.columns.to_list()[-1]
+    states = []
+
+    data.sort_values(ascending=False, by=most_recent_column, inplace=True)
+
+    for state in data['Province_State']:
+        if state not in states and len(states) <= size:
+            states.append(state)
+        if len(states) == size:
+            break
+
+    return states
+
+
+def make_state_death_plot():
+    """
+    Creates a line plot of the cumulative death total for the top five U.S states
+    """
+
+    death_data = get_death_time_series('US')
+    states = get_top_states_by_metric('deaths', 5)
+    state_counts = []
+    most_recent_column = death_data.columns.to_list()[-1]
+    relevant_columns = [column for column in death_data.columns.to_list() if '/20' in column]
+
+    for state in states:
+        state_data = death_data[death_data['Province_State'] == state]
+        state_data = state_data[relevant_columns]
+        internal_counts = []
+
+        for column in state_data.columns:
+            day_sum = int(state_data[column].sum())
+
+            internal_counts.append(day_sum)
+
+        state_counts.append(internal_counts)
+        internal_counts = []
+
+    # Finally start setting up the plot
+    days = len(relevant_columns) + 1
+    x_vals = np.arange(start=1, stop=days)
+
+    plt.title(f'Daily Death Totals for the Top 5 U.S States by Death Total On {most_recent_column}')
+    plt.xlabel('Days Since 01/22/2020')
+    plt.ylabel('Deaths')
+    plt.gcf().set_size_inches(12, 12)
+
+    line_1 = plt.plot(x_vals, state_counts[0], color='red')
+    line_2 = plt.plot(x_vals, state_counts[1], color='green')
+    line_3 = plt.plot(x_vals, state_counts[2], color='blue')
+    line_4 = plt.plot(x_vals, state_counts[3], color='orange')
+    line_5 = plt.plot(x_vals, state_counts[4], color='purple')
+
+    plt.legend((line_1[0], line_2[0], line_3[0], line_4[0], line_5[0]),
+               (states[0], states[1], states[2], states[3], states[4]),
+               loc='upper left')
+
+    plt.savefig(ct.plot_path + 'death_comp_plot.png')
+    plt.show(block=False)
+    plt.close()
+
+
+def make_per_capita_plot():
+    """
+    Makes a plot of the top five states per capita by deaths
+    """
+
+    # First, get the top five per capita
+    death_data = get_death_time_series('US')
+    most_recent_column = death_data.columns.to_list()[-1]
+    states = []
+    combinations = []
+
+    for state in death_data['Province_State']:
+        if state not in states:
+            states.append(state)
+
+    for state in states:
+        state_frame = death_data[death_data['Province_State'] == state]
+        total_pop = int(state_frame['Population'].sum())
+        total_deaths = int(state_frame[most_recent_column].sum())
+
+        if total_pop == 0:
+            pass
+        else:
+            # Per 100,000
+            death_rate = round((total_deaths / total_pop) * 100000, 2)
+
+            combinations.append((state, death_rate))
+
+    top_list = sorted(combinations, key=lambda state_pair: state_pair[1], reverse=True)
+    top_5 = top_list[:5]
+
+    # Now for the plotting
+    plot_states = [entry[0] for entry in top_5]
+    plot_rates = [entry[1] for entry in top_5]
+
+    plt.gcf().set_size_inches(10, 10)
+    plt.title(f'Top 5 States by Deaths per 100,000 Population on {ct.now.strftime("%m/%d/%y")}')
+    plt.xlabel('State')
+    plt.ylabel('Deaths per 100,000 Population')
+    plt.bar(x=plot_states, height=plot_rates)
+
+    plt.savefig(ct.plot_path + 'capita_plot.png')
+    plt.show(block=False)
+    plt.close()
