@@ -515,17 +515,17 @@ def make_tweet(topic: str, updates: dict):
 
         prev_column_comp = global_ts.columns.to_list()[-1]
         us_global_share = round((dp.get_country_cumulative(ts_data)[-1] / global_ts[prev_column_comp].sum()) * 100, 2)
-        target = 500000
+        target = 600000
 
         time_to_target = dp.get_time_to_target(target)
 
-        death_comparison_country = dp.find_metric_leader(dp.get_death_time_series())
-        death_comp_time = dp.get_time_to_target(metric_type='deaths')
+        top_3_per_cap_pairs = dp.get_deaths_per_capita(size=3)
+        top_3_per_cap = [entry[0] for entry in top_3_per_cap_pairs]
 
         text = f'COVID-19 Update: This tracker has found {change:,} new cases and {death_change:,} new deaths, ' \
                f'a {percent_change}% increase in cases and {percent_death_change}% increase in deaths since yesterday. ' \
-               f"At both country's 3-day average death rate, the U.S will overtake {death_comparison_country} " \
-               f"as the leader in global deaths in {death_comp_time} days."
+               f"The top 3 states in deaths per 100,000 population are {top_3_per_cap[0]}, {top_3_per_cap[1]}, and" \
+               f" {top_3_per_cap[2]}"
 
         follow_text = f"The U.S currently has {us_global_share}% of the world's cases. At its 3-day average rate, " \
                       f"the U.S will have {target:,} cases in {time_to_target} days (Estimate)." \

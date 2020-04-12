@@ -547,12 +547,14 @@ def make_state_death_plot():
     plt.close()
 
 
-def make_per_capita_plot():
+def get_deaths_per_capita(multiplier=100000, size=5) -> list:
     """
-    Makes a plot of the top five states per capita by deaths
+    Gets the top n U.S states per multiplier
+    :param multiplier: The multipler to use for the resulting rate. As in 'X deaths per {metric}'
+    :param size: The number of states to return. Default is five
+    :return: A list of the top {n} states per {multiplier}
     """
 
-    # First, get the top five per capita
     death_data = get_death_time_series('US')
     most_recent_column = death_data.columns.to_list()[-1]
     states = []
@@ -571,12 +573,21 @@ def make_per_capita_plot():
             pass
         else:
             # Per 100,000
-            death_rate = round((total_deaths / total_pop) * 100000, 2)
+            death_rate = round((total_deaths / total_pop) * multiplier, 2)
 
             combinations.append((state, death_rate))
 
     top_list = sorted(combinations, key=lambda state_pair: state_pair[1], reverse=True)
-    top_5 = top_list[:5]
+
+    return top_list[:size]
+
+
+def make_per_capita_plot():
+    """
+    Makes a plot of the top five states per capita by deaths
+    """
+
+    top_5 = get_deaths_per_capita()
 
     # Now for the plotting
     plot_states = [entry[0] for entry in top_5]
