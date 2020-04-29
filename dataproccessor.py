@@ -80,6 +80,8 @@ def make_plots(data: [pd.DataFrame]):
 
     make_per_capita_plot()
 
+    make_testing_plot()
+
     ct.logger.info('Created plots!')
 
 
@@ -572,7 +574,7 @@ def get_deaths_per_capita(multiplier=100000, size=5) -> list:
         if total_pop == 0:
             pass
         else:
-            # Per 100,000
+            # Per Multiplier
             death_rate = round((total_deaths / total_pop) * multiplier, 2)
 
             combinations.append((state, death_rate))
@@ -600,5 +602,30 @@ def make_per_capita_plot():
     plt.bar(x=plot_states, height=plot_rates)
 
     plt.savefig(ct.plot_path + 'capita_plot.png')
+    plt.show(block=False)
+    plt.close()
+
+
+def make_testing_plot():
+    """
+    Makes a bar plot fo the top five states by tests per 100,000 population
+    """
+
+    test_data = ct.get_jhu_data().sort_values(by='test_rate', ascending=False)
+    plot_states = test_data['state'][:5]
+    plot_tests = test_data['test_rate'][:5]
+    plot_incidence = test_data['incidence'][:5]
+
+    plt.title(f'Top 5 States by Testing Rate and Their Incidence On {ct.now.strftime("%m/%d/%y")}')
+    plt.xlabel('State')
+    plt.ylabel('Measure Per 100,000 Population')
+
+    test_bar = plt.bar(x=plot_states, height=plot_tests, color='#ffcc00')
+    inc_bar = plt.bar(x=plot_states, height=plot_incidence, color='red')
+
+    plt.gcf().set_size_inches(10, 10)
+    plt.legend((test_bar[0], inc_bar[0]), ('Tests', 'Incidence'), loc='best')
+
+    plt.savefig(ct.plot_path + 'capita_rate.png')
     plt.show(block=False)
     plt.close()

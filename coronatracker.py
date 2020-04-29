@@ -93,7 +93,7 @@ def get_jhu_data() -> pd.DataFrame:
     """
     logger.info('Attempting to connect to JHU sheet')
 
-    jhu_github_url = 'https://github.com/CSSEGISandData/COVID-19/tree/master/csse_covid_19_data/csse_covid_19_daily_reports'
+    jhu_github_url = 'https://github.com/CSSEGISandData/COVID-19/tree/master/csse_covid_19_data/csse_covid_19_daily_reports_us'
     github_req = requests.get(jhu_github_url)
     git_soup = BeautifulSoup(github_req.content, features='html.parser')
 
@@ -127,14 +127,18 @@ def get_jhu_data() -> pd.DataFrame:
         file.write(csv_data)
 
     temp_frame = pd.read_csv(jhu_path + 'jhu_temp.csv')
-    us_frame = temp_frame[['Province_State', 'Country_Region', 'Confirmed', 'Deaths', 'Recovered']]
+    us_frame = temp_frame[['Province_State', 'Country_Region', 'Confirmed', 'Deaths', 'Recovered',
+                           'Testing_Rate', 'Hospitalization_Rate', 'Incident_Rate', 'Mortality_Rate']]
     us_frame.rename(columns={'Province_State': 'case_loc'}, inplace=True)
     is_US = us_frame['Country_Region'] == 'US'
     us_frame = us_frame[is_US]
     us_frame = us_frame[~us_frame['case_loc'].str.contains('Princess')]
 
-    us_frame = us_frame[['case_loc', 'Confirmed', 'Deaths', 'Recovered']]
-    rename_map = {'case_loc': 'state', 'Confirmed': 'cases', 'Deaths': 'deaths', 'Recovered': 'recoveries'}
+    us_frame = us_frame[['case_loc', 'Confirmed', 'Deaths', 'Recovered', 'Testing_Rate', 'Hospitalization_Rate',
+                         'Incident_Rate', 'Mortality_Rate']]
+    rename_map = {'case_loc': 'state', 'Confirmed': 'cases', 'Deaths': 'deaths', 'Recovered': 'recoveries',
+                  'Testing_Rate': 'test_rate', 'Hospitalization_Rate': 'hosp_rate', 'Incident_Rate': 'incidence',
+                  'Mortality_Rate': 'mort_rate'}
 
     us_frame.rename(columns=rename_map, inplace=True)
 
@@ -472,67 +476,39 @@ def make_tweet(topic: str, updates: dict):
     hashtags = ['#Coronavirus', '#USCoronavirus', '#COVID19', '#USCOVID19', '#CoronaOutbreak', '#CoronaAlert',
                 '#COVID_19', '#CoronaPandemic', '#CoronavirusOutbreak']
     chosen_tags = random.sample(hashtags, k=3)
-    text = 'COVID-19 Update: This tracker has found new '
     lead_media_ids = []
     follow_media_ids = []
-    lead_files = ['capita_plot.png', 'rate_plot.png', 'death_comp_plot.png', 'comp_plot.png']
-    follow_files = ['change_plot.png', 'state_sum.png']
+    lead_files = ['capita_plot.png', 'capita_rate.png', 'death_comp_plot.png', 'change_plot.png']
+    follow_files = ['comp_plot.png', 'state_sum.png', 'rate_plot.png']
 
-    # Formats a tweet with all the updated states' abbreviations
-    if topic == 'names':
-        for key in updates.keys():
-            if updates[key] != []:
-                states_format = ''
+    ts_data = get_time_series()
+    global_ts = dp.get_global_time_series()
+    change = get_daily_change(ts_data)
+    prev_column = ts_data.columns.to_list()[-2]
+    percent_change = round((change / ts_data[prev_column].sum()) * 100, 2)
 
-                if text == 'COVID-19 Update: This tracker has found new ':
-                    for name in updates[key]:
-                        if states_format == '':
-                            states_format = state_abb_map[name]
-                        else:
-                            states_format = states_format + f' and {state_abb_map[name]}'
-                    text = text + f'{key} in {states_format}'
-                else:
-                    for name in updates[key]:
-                        if states_format == '':
-                            states_format = state_abb_map[name]
-                        else:
-                            states_format = states_format + f' and {state_abb_map[name]}'
-                    text = text + f', and new {key} in {states_format}'
-            states_format = ''
+    us_death_ts = dp.get_death_time_series('US')
+    death_prev_col = us_death_ts.columns.to_list()[-1]
+    death_change = get_daily_change(us_death_ts)
+    percent_death_change = round((death_change / us_death_ts[death_prev_col].sum()) * 100, 2)
 
-    # Formats a tweet with change in cases per day across all the updated states
-    elif topic == 'change':
-        ts_data = get_time_series()
-        global_ts = dp.get_global_time_series()
-        change = get_daily_change(ts_data)
-        prev_column = ts_data.columns.to_list()[-2]
-        percent_change = round((change / ts_data[prev_column].sum()) * 100, 2)
+    prev_column_comp = global_ts.columns.to_list()[-1]
+    us_global_share = round((dp.get_country_cumulative(ts_data)[-1] / global_ts[prev_column_comp].sum()) * 100, 2)
+    target = 1100000
 
-        us_death_ts = dp.get_death_time_series('US')
-        death_prev_col = us_death_ts.columns.to_list()[-1]
-        death_change = get_daily_change(us_death_ts)
-        percent_death_change = round((death_change / us_death_ts[death_prev_col].sum()) * 100, 2)
+    time_to_target = dp.get_time_to_target(target)
 
-        prev_column_comp = global_ts.columns.to_list()[-1]
-        us_global_share = round((dp.get_country_cumulative(ts_data)[-1] / global_ts[prev_column_comp].sum()) * 100, 2)
-        target = 600000
+    top_3_per_cap_pairs = dp.get_deaths_per_capita(size=3)
+    top_3_per_cap = [entry[0] for entry in top_3_per_cap_pairs]
 
-        time_to_target = dp.get_time_to_target(target)
+    text = f'COVID-19 Update: This tracker has found {change:,} new cases and {death_change:,} new deaths, ' \
+           f'a {percent_change}% increase in cases and {percent_death_change}% increase in deaths since yesterday. ' \
+           f"The top 3 states in deaths per 100,000 population are {top_3_per_cap[0]}, {top_3_per_cap[1]}, and" \
+           f" {top_3_per_cap[2]}"
 
-        top_3_per_cap_pairs = dp.get_deaths_per_capita(size=3)
-        top_3_per_cap = [entry[0] for entry in top_3_per_cap_pairs]
-
-        text = f'COVID-19 Update: This tracker has found {change:,} new cases and {death_change:,} new deaths, ' \
-               f'a {percent_change}% increase in cases and {percent_death_change}% increase in deaths since yesterday. ' \
-               f"The top 3 states in deaths per 100,000 population are {top_3_per_cap[0]}, {top_3_per_cap[1]}, and" \
-               f" {top_3_per_cap[2]}"
-
-        follow_text = f"The U.S currently has {us_global_share}% of the world's cases. At its 3-day average rate, " \
-                      f"the U.S will have {target:,} cases in {time_to_target} days (Estimate)." \
-                      f" {chosen_tags[0]} {chosen_tags[1]} {chosen_tags[2]}"
-
-    else:
-        text = input('Please enter tweet text: ')
+    follow_text = f"The U.S currently has {us_global_share}% of the world's cases. At its 3-day average rate, " \
+                  f"the U.S will have {target:,} cases in {time_to_target} days (Estimate)." \
+                  f" {chosen_tags[0]} {chosen_tags[1]} {chosen_tags[2]}"
 
     multi_tweet = True
 
