@@ -494,9 +494,13 @@ def make_tweet(topic: str, updates: dict):
 
     prev_column_comp = global_ts.columns.to_list()[-1]
     us_global_share = round((dp.get_country_cumulative(ts_data)[-1] / global_ts[prev_column_comp].sum()) * 100, 2)
-    target = 1100000
+    target = 1300000
 
     time_to_target = dp.get_time_to_target(target)
+
+    while time_to_target == 0:
+        target += 100000
+        time_to_target = dp.get_time_to_target(target)
 
     top_3_per_cap_pairs = dp.get_deaths_per_capita(size=3)
     top_3_per_cap = [entry[0] for entry in top_3_per_cap_pairs]

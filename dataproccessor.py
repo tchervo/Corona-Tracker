@@ -4,6 +4,7 @@ import os
 from datetime import datetime
 
 import matplotlib.pyplot as plt
+import seaborn as sns
 import numpy as np
 import pandas as pd
 
@@ -39,15 +40,9 @@ def make_plots(data: [pd.DataFrame]):
 
     pos = np.arange(len(state_frame['state']))
     width = 0.9
-    # Interval is [Start, Stop) so we need to go one more
+   
     plt.gcf().set_size_inches(14, 14)
 
-    # Tries to find a visually appealing number of y ticks
-    jhu_step = 50
-    while len(np.arange(start=state_frame['cases'].min(), stop=state_frame['cases'].max() + 1, step=jhu_step)) > 34:
-        jhu_step += 10
-
-    plt.yticks(np.arange(start=state_frame['cases'].min(), stop=state_frame['cases'].max() + 1, step=jhu_step))
     case_bar = plt.bar(pos, state_frame['cases'], width, label='Cases')
     death_bar = plt.bar(pos, state_frame['deaths'], width, label='Deaths')
     recov_bar = plt.bar(pos, state_frame['recoveries'], width,
@@ -507,42 +502,36 @@ def make_state_death_plot():
     """
 
     death_data = get_death_time_series('US')
-    states = get_top_states_by_metric('deaths', 5)
+    states = get_top_states_by_metric('deaths', 10)
     state_counts = []
-    most_recent_column = death_data.columns.to_list()[-1]
     relevant_columns = [column for column in death_data.columns.to_list() if '/20' in column]
+    new_states = []
 
     for state in states:
         state_data = death_data[death_data['Province_State'] == state]
         state_data = state_data[relevant_columns]
-        internal_counts = []
+
+        temp_state = [state] * len(relevant_columns)
+        new_states += temp_state
 
         for column in state_data.columns:
             day_sum = int(state_data[column].sum())
 
-            internal_counts.append(day_sum)
+            state_counts.append(day_sum)
 
-        state_counts.append(internal_counts)
-        internal_counts = []
+    # Have to rearange the data to make it suitable for the plot
+    dates = relevant_columns * len(states)
+    day_num = [num for num in range(len(relevant_columns))] * 10
+    plot_frame = pd.DataFrame({'date': dates, 'state': new_states, 'counts': state_counts, 'day_num': day_num})
 
     # Finally start setting up the plot
-    days = len(relevant_columns) + 1
-    x_vals = np.arange(start=1, stop=days)
+    sns.set()
+    sns.lineplot(x='day_num', y='counts', hue='state', data=plot_frame)
 
-    plt.title(f'Daily Death Totals for the Top 5 U.S States by Death Total On {most_recent_column}')
+    plt.title(f'Daily Death Totals for the Top 10 U.S States by Death Total On {ct.now.strftime("%m/%d/%y")}')
     plt.xlabel('Days Since 01/22/2020')
     plt.ylabel('Deaths')
     plt.gcf().set_size_inches(12, 12)
-
-    line_1 = plt.plot(x_vals, state_counts[0], color='red')
-    line_2 = plt.plot(x_vals, state_counts[1], color='green')
-    line_3 = plt.plot(x_vals, state_counts[2], color='blue')
-    line_4 = plt.plot(x_vals, state_counts[3], color='orange')
-    line_5 = plt.plot(x_vals, state_counts[4], color='purple')
-
-    plt.legend((line_1[0], line_2[0], line_3[0], line_4[0], line_5[0]),
-               (states[0], states[1], states[2], states[3], states[4]),
-               loc='upper left')
 
     plt.savefig(ct.plot_path + 'death_comp_plot.png')
     plt.show(block=False)
@@ -582,6 +571,24 @@ def get_deaths_per_capita(multiplier=100000, size=5) -> list:
     top_list = sorted(combinations, key=lambda state_pair: state_pair[1], reverse=True)
 
     return top_list[:size]
+
+
+def get_top_increasing_by_metric(metric='deaths', size=5) -> list:
+    """
+    Finds the top {size} states by {metric}
+    :param metric: The metric to be measured. Either cases or deaths
+    :param size: How many states should be returned. Default is 5
+    :return: A list of the top {size} states by {metric}
+    """
+
+    if metric == 'deaths':
+        death_frame = get_death_time_series('US')
+        req_columns = [column for column in death_frame.columns.to_list() if '/20' in column
+                       or column == 'Province_State']
+        states = [state for state in death_frame['Province_State'].unique() if 'Princess' not in state]
+        death_frame = death_frame[req_columns]
+
+        print(states)
 
 
 def make_per_capita_plot():
