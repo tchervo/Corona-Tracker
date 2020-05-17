@@ -11,23 +11,45 @@ import pandas as pd
 import coronatracker as ct
 
 
-def make_plots(data: [pd.DataFrame]):
+def make_plots():
     """
     Generates the plots displayed in tweets posted by this bot.
-    :param data: A list of DataFrames. The first frame should contain all the JHU data for the U.S, and the second
-    frame should contain time series information.
     """
     print('Attempting to build plots!')
     ct.logger.info('Making plots...')
 
-    us_frame = data[0]
-    ts_data = data[1]
-    global_data = data[2]
-    # Select the top 25 states
-    us_frame.sort_values(by='cases', axis=0, ascending=False, inplace=True)
+    make_summary_bar_plot()
 
-    # General Plot Setup. Plots are "shown" then immediately closed to refresh the figure
-    plt.style.use('fivethirtyeight')
+    ts_data = ct.get_time_series()
+    global_data = get_global_time_series()
+
+    # Time Series Cumulative Plot
+    freqs = get_country_cumulative(ts_data)
+    make_time_series_plot(freqs)
+
+    # Daily Change Plot
+    changes = get_total_daily_change(ts_data)
+    make_daily_change_plot(changes)
+
+    # Country Cumulative Case Comparison Plot
+    comp_countries = find_metric_leader(global_data, inc_US=True, size=8)
+    cumulative_cases = get_country_cumulative(global_data, countries=comp_countries)
+
+    make_comparison_plot(comp_countries, cumulative_cases)
+
+    make_state_death_plot()
+
+    make_per_capita_plot()
+
+    make_testing_plot()
+
+    ct.logger.info('Created plots!')
+
+
+def make_summary_bar_plot():
+    us_frame = ct.get_jhu_data()
+
+    us_frame.sort_values(by='cases', axis=0, ascending=False, inplace=True)
 
     for jhu_tick in plt.xticks()[1]:
         jhu_tick.set_rotation(45)
@@ -40,7 +62,7 @@ def make_plots(data: [pd.DataFrame]):
 
     pos = np.arange(len(state_frame['state']))
     width = 0.9
-   
+
     plt.gcf().set_size_inches(14, 14)
 
     case_bar = plt.bar(pos, state_frame['cases'], width, label='Cases')
@@ -56,28 +78,6 @@ def make_plots(data: [pd.DataFrame]):
     plt.savefig(ct.plot_path + 'state_sum.png')
     plt.show(block=False)
     plt.close()
-
-    # Time Series Cumulative Plot
-    freqs = get_country_cumulative(ts_data)
-    make_time_series_plot(freqs)
-
-    # Daily Change Plot
-    changes = get_total_daily_change(ts_data)
-    make_daily_change_plot(changes)
-
-    # Country Cumulative Case Comparison Plot
-    cumulative_cases = get_country_cumulative(global_data, countries=['US', 'Italy', 'Spain', 'Germany',
-                                                                      'Canada', 'United Kingdom', 'China'])
-
-    make_comparison_plot(cumulative_cases)
-
-    make_state_death_plot()
-
-    make_per_capita_plot()
-
-    make_testing_plot()
-
-    ct.logger.info('Created plots!')
 
 
 def make_time_series_plot(freqs: list):
@@ -129,50 +129,28 @@ def make_daily_change_plot(changes: []):
     plt.close()
 
 
-def make_comparison_plot(cumulative_cases: list):
-    """Creates a line plot comparing U.S Cumulative Cases to other countries"""
+def make_comparison_plot(countries: list, cumulative_cases: list):
+    """
+    Creates a line plot comparing U.S Cumulative Cases to other countries
+    :param countries: The name of the countries to plot
+    :param cumulative_cases: The cumulative number of cases for each country
+    """
 
-    countries = ['US', 'Italy', 'Spain', 'Germany', 'Canada', 'United Kingdom', 'China']
     change_dict = {country: change for country, change in zip(countries, cumulative_cases)}
+    days = np.arange(start=0, stop=len(change_dict['US'])).tolist() * 8
+    change_frame = pd.DataFrame(change_dict).melt(var_name='country', value_name='cases')
+    change_frame['day'] = days
 
-    days = len(change_dict['US']) + 1
+    sns.set()
+    sns.lineplot(x='day', y='cases', hue='country', data=change_frame)
 
-    us_line = plt.plot(np.arange(1, stop=days), change_dict['US'], color='red')
-    italy_line = plt.plot(np.arange(1, stop=days), change_dict['Italy'], color='blue')
-    spain_line = plt.plot(np.arange(1, stop=days), change_dict['Spain'], color='green')
-    germany_line = plt.plot(np.arange(1, stop=days), change_dict['Germany'], color='purple')
-    canada_line = plt.plot(np.arange(1, stop=days), change_dict['Canada'], color='orange')
-    uk_line = plt.plot(np.arange(1, stop=days), change_dict['United Kingdom'], color='yellow')
-    china_line = plt.plot(np.arange(1, stop=days), change_dict['China'], color='black')
-
-    plt.legend((us_line[0], italy_line[0], spain_line[0], germany_line[0], canada_line[0], uk_line[0], china_line[0]),
-               ('United States', 'Italy', 'Spain', 'Germany', 'Canada', 'United Kingdom', 'China'),
-               loc='upper left')
-
-    plt.title('Cumulative Cases in the U.S and Other Countries')
+    plt.title('Cumulative Cases in the Top 10 Countries by Cases Globally')
     plt.gcf().set_size_inches(12, 12)
     plt.xlabel('Days since 01/22/2020')
     plt.ylabel('Cumulative Cases')
 
     plt.savefig(ct.plot_path + 'comp_plot.png')
     plt.show(block=False)
-    plt.close()
-
-
-# Needs some improvements to polynomial fitting - Temporarily disabled
-def make_acceleration_plot():
-    changes = get_total_daily_change(ct.get_time_series())[50:]
-    x_vals = np.arange(start=1, stop=len(changes) + 1)
-    coeff = np.polynomial.polynomial.polyfit(x=x_vals, y=changes, deg=2)
-    print(coeff)
-    change_rate = [((2 * coeff[2]) * x) + coeff[1] for x in x_vals]
-    fitted = [(coeff[2] * (x ** 2) + (coeff[1] * x)) + coeff[0] for x in x_vals]
-
-    plt.plot(x_vals, change_rate, color='red')
-    # plt.plot(x_vals, fitted, color='green')
-    # plt.plot(x_vals, changes, color='blue')
-
-    plt.show()
     plt.close()
 
 
@@ -386,30 +364,31 @@ def get_death_time_series(country='all') -> pd.DataFrame:
         return death_frame[death_frame['Country_Region'] == country]
 
 
-def find_metric_leader(global_data: pd.DataFrame, inc_US=False) -> str:
+def find_metric_leader(global_data: pd.DataFrame, inc_US=False, size=1):
     """
     Finds the country with the largest amount of cases or deaths, depending on the type of data provided
+    :param size: How many leaders should be returned? Default is 1
     :param inc_US: Should the U.S be included as a potential leader? Default is no due to the U.S' current position
     :param global_data: Global time series data
-    :return: The name of the leading country
+    :return: The name of the leading country if size is 1, or a list of size {size} if size is greater than 1
     """
 
     current_leader = 'NO COUNTRY FOUND'
-    leader_cases = 0
+    newest_column = global_data.columns.to_list()[-1]
+    global_data.sort_values(by=newest_column, ascending=False, inplace=True)
+    leader_list = []
 
     for country in global_data['Country_Region']:
         if country == 'US' and inc_US is False:
             pass
         else:
-            country_data = global_data[global_data['Country_Region'] == country]
-            last_column_name = country_data.columns.to_list()[-1]
-            total_cases = country_data[last_column_name].sum()
-
-            if total_cases > leader_cases:
-                current_leader = country
-                leader_cases = total_cases
-
-    return current_leader
+            if size == 1:
+                return country
+            else:
+                if len(leader_list) < size:
+                    leader_list.append(country)
+                else:
+                    return leader_list
 
 
 def get_time_to_target(target=-1, metric_type='cases'):

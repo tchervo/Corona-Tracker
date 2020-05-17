@@ -28,22 +28,6 @@ log_format = '%(levelname)s | %(asctime)s | %(message)s'
 should_tweet = False
 should_save_jhu = False
 
-state_map = {'AL': 'Alabama', 'AK': 'Alaska', 'AR': 'Arkansas', 'AZ': 'Arizona', 'CA': 'California', 'CO': 'Colorado',
-             'CT': 'Connecticut', 'DE': 'Delaware', 'FL': 'Florida', 'GA': 'Georgia', 'HI': 'Hawaii',
-             'ID': 'Idaho', 'IL': 'Illinois', 'IN': 'Indiana', 'IA': 'Iowa', 'KS': 'Kansas', 'KY': 'Kentucky',
-             'LA': 'Louisiana', 'ME': 'Maine', 'MD': 'Maryland', 'MA': 'Massachusetts', 'MI': 'Michigan',
-             'MN': 'Minnesota', 'MS': 'Mississippi', 'MO': 'Missouri', 'MT': 'Montana', 'NE': 'Nebraska',
-             'NV': 'Nevada', 'NH': 'New Hampshire', 'NJ': 'New Jersey', 'NM': 'New Mexico', 'NY': 'New York',
-             'NC': 'North Carolina', 'ND': 'North Dakota', 'OH': 'Ohio', 'OK': 'Oklahoma', 'OR': 'Oregon',
-             'PA': 'Pennsylvania', 'RI': 'Rhode Island', 'SC': 'South Carolina', 'SD': 'South Dakota',
-             'TN': 'Tennessee', 'TX': 'Texas', 'UT': 'Utah', 'VT': 'Vermont', 'VA': 'Virginia', 'WA': 'Washington',
-             'WV': 'West Virginia', 'WI': 'Wisconsin', 'WY': 'Wyoming', 'D.C.': 'Washington D.C', 'P.R.': 'Puerto Rico',
-             'VI': 'Virgin Islands, U.S.'}
-
-state_abb_map = {}
-
-for name, abb in zip(state_map.values(), state_map.keys()):
-    state_abb_map[name] = abb
 
 if os.path.exists(twitter_file):
     with open(twitter_file, 'r') as file:
@@ -466,11 +450,9 @@ def get_most_recent_data(data_source: str) -> pd.DataFrame:
         return pd.DataFrame()
 
 
-def make_tweet(topic: str, updates: dict):
+def make_tweet():
     """
     Creates a tweet to post to Twitter
-    :param updates: Updates in the data
-    :param topic: The data topic to tweet about. Either jhu, cdc, or 'both'
     """
 
     hashtags = ['#Coronavirus', '#USCoronavirus', '#COVID19', '#USCOVID19', '#CoronaOutbreak', '#CoronaAlert',
@@ -604,13 +586,12 @@ def main(first_run=True):
 
     us_frame = get_jhu_data()
 
-    dp.make_plots([us_frame, get_time_series(), dp.get_global_time_series()])
+    dp.make_plots()
 
     if should_tweet:
         # File saving had to be moved down here or else the tweet formatter would not be able to detect new data
-        old_data = get_most_recent_data('jhu')
-        updates = get_updated_states(us_frame, old_data)
-        make_tweet('change', updates)
+        make_tweet()
+
         if should_save_jhu:
             print('Found new JHU data! Saving...')
             logger.info('Found new JHU data! Now saving...')
