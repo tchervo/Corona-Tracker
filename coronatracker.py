@@ -16,6 +16,7 @@ from geohelper import *
 
 jhu_path = os.getcwd() + '/jhu_data/'
 cdc_path = os.getcwd() + '/cdc_data/'
+tracking_proj_path = os.getcwd() + '/ctp_data/'
 plot_path = os.getcwd() + '/plots/'
 twitter_file = os.getcwd() + '/twitter_creds.json'
 
@@ -460,8 +461,8 @@ def make_tweet():
     chosen_tags = random.sample(hashtags, k=3)
     lead_media_ids = []
     follow_media_ids = []
-    lead_files = ['capita_plot.png', 'capita_rate.png', 'death_comp_plot.png', 'change_plot.png']
-    follow_files = ['comp_plot.png', 'state_sum.png', 'rate_plot.png']
+    lead_files = ['vent_icu_plot.png', 'capita_rate.png', 'death_comp_plot.png', 'change_plot.png']
+    follow_files = ['comp_plot.png', 'state_sum.png', 'rate_plot.png', 'capita_plot.png']
 
     ts_data = get_time_series()
     global_ts = dp.get_global_time_series()

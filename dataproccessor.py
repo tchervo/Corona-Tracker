@@ -4,6 +4,7 @@ import os
 from datetime import datetime
 
 import matplotlib.pyplot as plt
+import matplotlib.ticker as ticker
 import seaborn as sns
 import numpy as np
 import pandas as pd
@@ -42,6 +43,8 @@ def make_plots():
     make_per_capita_plot()
 
     make_testing_plot()
+
+    make_vent_icu_plot()
 
     ct.logger.info('Created plots!')
 
@@ -615,3 +618,57 @@ def make_testing_plot():
     plt.savefig(ct.plot_path + 'capita_rate.png')
     plt.show(block=False)
     plt.close()
+
+
+def get_tracking_project_data() -> pd.DataFrame:
+    """
+    Fetches historical data from the COVID-19 Tracking Project
+    https://covidtracking.com/
+
+    :return: A DataFrame containing the historical data from the COVID-19 Tracking Project
+    """
+
+    if os.path.exists(ct.tracking_proj_path) is not True:
+        os.mkdir(ct.tracking_proj_path)
+
+    newest_csv_req = urllib.request.Request("https://covidtracking.com/api/v1/us/daily.csv")
+    csv_file = urllib.request.urlopen(newest_csv_req)
+    csv_data = csv_file.read()
+
+    with open(ct.tracking_proj_path + 'historical_data.csv', 'wb') as file:
+        file.write(csv_data)
+
+    tracking_frame = pd.read_csv(ct.tracking_proj_path + 'historical_data.csv')
+
+    return tracking_frame
+
+
+def make_vent_icu_plot():
+    """
+    Generates a line plot showing the test positivity rate over time for the US
+    """
+
+    data = get_tracking_project_data()
+    # Filters for data on or after 03/26/2020 as this is the first date ICU and ventilator data are both available
+    data = data[data['date'] >= 20200326]
+    counts = data['inIcuCurrently'].tolist() + data['onVentilatorCurrently'].tolist()
+    count_type = (['ICU'] * len(data['inIcuCurrently'])) + (['Ventilator'] * len(data['onVentilatorCurrently']))
+    # If the array is not converted to a list, the all the elements in the array just get multiplied by 2
+    days = np.arange(0, len(data['date'])).tolist() * 2
+    plot_frame = pd.DataFrame({'day': days,
+                               'counts': counts,
+                               'count_type': count_type})
+
+    sns.set()
+    sns.lineplot(x='day', y='counts', hue='count_type', data=plot_frame)
+
+    plt.title('Ventilator and ICU Usage for the U.S Since 03/26/2020')
+    plt.xlabel('Days Since 03/26/2020')
+    plt.ylabel('Count')
+
+    plt.gcf().set_size_inches(10, 10)
+    plt.savefig(ct.plot_path + 'vent_icu_plot.png')
+    plt.show(block=False)
+    plt.close()
+
+
